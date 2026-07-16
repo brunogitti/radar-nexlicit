@@ -1,0 +1,20 @@
+# Ambiente virtual do Python. Cada pessoa cria o dela na própria máquina,
+# não faz sentido guardar isso no repositório.
+venv/
+
+# Saídas da captura (JSON, CSV com os editais). Dado gerado, não código.
+dados/
+
+# Arquivos que o Python cria sozinho ao rodar (cache de bytecode).
+__pycache__/
+*.pyc
+
+# Cache do pytest.
+.pytest_cache/
+
+# Segredos (senha de e-mail, chave de API, etc), quando existirem.
+.env
+
+# Configuração local do Claude Code (ferramenta de IA usada no
+# desenvolvimento). É configuração de máquina, não faz parte do projeto.
+.claude/

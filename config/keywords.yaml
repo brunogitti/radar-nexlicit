@@ -1,0 +1,221 @@
+# NexLicit Radar — dicionário de palavras-chave por segmento
+# Este arquivo é lido em tempo de execução. Editar aqui muda o que o radar captura,
+# sem tocar em uma linha de código Python.
+#
+# Como funciona cada regra:
+#   - "termos" é uma lista. TODOS os termos da lista precisam aparecer no texto do
+#     edital para a regra bater (lógica E). Uma lista de um item só = termo simples.
+#   - "excluir" (opcional) derruba a regra se qualquer um desses termos aparecer.
+#   - A comparação é feita sobre o texto normalizado: minúsculo, sem acento,
+#     e por radical (prefixo), então "limpeza" bate "Limpeza", "LIMPEZA" e
+#     "produtos de limpezas". Ver regras de normalização no config abaixo.
+
+versao: 1
+
+config:
+  ignorar_acentos: true
+  ignorar_maiusculas: true
+  # casar por radical: o termo bate se aparecer como prefixo de uma palavra do texto.
+  # Ex.: termo "camiset" bate camiseta / camisetas.
+  casar_por_radical: true
+  # tamanho mínimo do termo para permitir radical. Abaixo disso exige palavra inteira,
+  # senão "cabo" viraria "cabotagem" e "copo" viraria "coproprietário".
+  min_radical: 5
+  campos_analisados:
+    - objetoCompra
+    - informacaoComplementar
+
+segmentos:
+
+  - nome: Limpeza
+    regras:
+      - termos: [material, limpeza]
+      - termos: [produtos, limpeza]
+      - termos: [detergente]
+      - termos: [agua sanitaria]
+      - termos: [desinfetante]
+      - termos: [sabao]
+      - termos: [limpador]
+      - termos: [vassoura]
+      - termos: [alcool]
+        excluir: [alcool em gel hospitalar, alcool 70 hospitalar]
+      - termos: [papel, higienico]
+      - termos: [papel, toalha]
+      - termos: [saco, lixo]
+      - termos: [pano, chao]
+      - termos: [pano, prato]
+
+  - nome: Expediente
+    regras:
+      - termos: [material, expediente]
+      - termos: [material, escritorio]
+      - termos: [papel, sulfite]
+      - termos: [papel, a4]
+      - termos: [caneta]
+      - termos: [lapis]
+      - termos: [borracha, escolar]
+      - termos: [pasta, arquivo]
+      - termos: [envelope]
+      - termos: [caderno]
+      - termos: [agenda]
+
+  - nome: Copa e cozinha
+    regras:
+      - termos: [copa, cozinha]
+      - termos: [material, copa]
+      - termos: [cafe]
+      - termos: [acucar]
+      - termos: [copo, descartavel]
+      - termos: [garrafa, termica]
+      - termos: [colher]
+      - termos: [prato]
+
+  - nome: Gêneros alimentícios
+    regras:
+      - termos: [generos, alimenticios]
+      - termos: [merenda]
+      - termos: [hortifruti]
+      - termos: [arroz]
+      - termos: [carne]
+      - termos: [leite]
+      - termos: [oleo, soja]
+      - termos: [cesta, basica]
+
+  - nome: Descartáveis
+    regras:
+      - termos: [descartavel]
+      - termos: [descartaveis]
+
+  - nome: Informática
+    regras:
+      - termos: [informatica]
+      - termos: [notebook]
+      - termos: [computador]
+      # excluir: [monitoramento] porque "monitor" (7 letras, casa por
+      # prefixo) batia dentro de "monitoramento" (ex.: monitoramento
+      # continuo de glicose), que nao tem nada a ver com monitor de
+      # computador. Confirmado com edital real de Fernandopolis.
+      - termos: [monitor]
+        excluir: [monitoramento]
+      - termos: [mouse]
+      - termos: [teclado]
+      - termos: [pendrive]
+      - termos: [nobreak]
+      - termos: [no-break]
+      - termos: [roteador]
+      - termos: [impressora]
+
+  - nome: Eletrônicos
+    regras:
+      # termos soltos [eletronico]/[eletronicos] foram removidos: a palavra
+      # "eletronico" aparece direto em texto burocratico sem relacao com o
+      # produto ("Pregao Eletronico", "ambiente eletronico" do Compras.Gov),
+      # entao exigimos uma palavra companheira que so aparece quando o
+      # produto de fato e eletronico.
+      # excluir: [ambiente eletronico] derruba o caso em que a palavra
+      # companheira (equipamento/aparelho/produto) aparece no objeto por um
+      # motivo qualquer, e "eletronico" so aparece pelo texto padrao do
+      # Compras.Gov na informacaoComplementar, sem relacao com o produto.
+      - termos: [equipamento, eletronico]
+        excluir: [ambiente eletronico]
+      - termos: [aparelho, eletronico]
+        excluir: [ambiente eletronico]
+      - termos: [produto, eletronico]
+        excluir: [ambiente eletronico]
+
+  - nome: Elétrica
+    regras:
+      - termos: [material, eletrico]
+      - termos: [lampada]
+      - termos: [luminaria]
+      - termos: [refletor]
+      - termos: [cabo, eletrico]
+      - termos: [cabo, flexivel]
+
+  - nome: Hidráulica
+    regras:
+      - termos: [material, hidraulico]
+      - termos: [torneira]
+      - termos: [mangueira]
+      - termos: [tubo, pvc]
+      - termos: [caixa, dagua]
+      - termos: [caixa, agua]
+      - termos: [bomba, agua]
+
+  - nome: Construção
+    regras:
+      - termos: [material, construcao]
+      - termos: [cimento]
+      - termos: [areia]
+      - termos: [brita]
+      - termos: [tinta]
+      - termos: [tijolo]
+      - termos: [telha]
+      - termos: [ferragem]
+      - termos: [massa, corrida]
+
+  - nome: Gráfico
+    regras:
+      - termos: [material, grafico]
+      - termos: [servico, grafico]
+      - termos: [letreiro]
+      - termos: [comunicacao, visual]
+
+  - nome: Uniformes e vestuário
+    regras:
+      - termos: [uniforme]
+      - termos: [confeccao, uniforme]
+      - termos: [vestuario]
+      - termos: [camiseta]
+      - termos: [jaleco]
+      - termos: [avental]
+      - termos: [calca]
+      - termos: [roupa]
+
+  - nome: EPI
+    regras:
+      - termos: [epi]
+      - termos: [equipamento, protecao, individual]
+      - termos: [luva]
+      - termos: [mascara]
+      - termos: [capacete]
+      - termos: [botina]
+      - termos: [oculos, protecao]
+
+  - nome: Móveis
+    regras:
+      - termos: [mobiliario]
+      - termos: [cadeira]
+      - termos: [mesa, escritorio]
+      - termos: [armario]
+      - termos: [estante]
+
+  - nome: Automotivo
+    regras:
+      - termos: [pneu]
+      - termos: [bateria, automotiva]
+      - termos: [oleo, lubrificante]
+      - termos: [filtro, oleo]
+      - termos: [peca, veiculo]
+      - termos: [autopeca]
+
+  - nome: Piscina
+    regras:
+      - termos: [piscina]
+      - termos: [cloro]
+      # [tratamento, agua] foi removido: pegava estacao de tratamento de
+      # agua municipal (para consumo humano), que nao tem nada a ver com
+      # piscina. Qualquer tratamento de agua DE PISCINA vai mencionar a
+      # palavra "piscina" no objeto, entao a regra [piscina] sozinha ja
+      # cobre esse caso, sem o falso positivo.
+      - termos: [produtos, quimicos, agua]
+
+  - nome: Decoração
+    regras:
+      - termos: [decoracao]
+      - termos: [material, decorativo]
+
+# Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
+# regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
+# preenchendo conforme os falsos positivos aparecerem nos primeiros dias de uso.
+exclusoes_globais: []

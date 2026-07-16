@@ -1,0 +1,143 @@
+municipio,uf,km,codigo_ibge,ativo
+Álvares Florence,SP,66.5,3501202,sim
+Américo de Campos,SP,84.1,3501806,sim
+Aparecida d'Oeste,SP,40.6,3502606,sim
+Aparecida do Taboado,MS,60.7,5001003,sim
+Aspásia,SP,22.6,3503950,sim
+Auriflama,SP,46.3,3504206,sim
+Buritama,SP,97.7,3508108,sim
+Cardoso,SP,68.6,3510708,sim
+Carneirinho,MG,69.9,3114550,sim
+Cosmorama,SP,82.9,3512902,sim
+Dirce Reis,SP,22.8,3513850,sim
+Dolcinópolis,SP,16.5,3514205,sim
+Estrela d'Oeste,SP,15.2,3515202,sim
+Fernandópolis,SP,31.2,3515509,sim
+Floreal,SP,66.9,3515905,sim
+Gastão Vidigal,SP,68.8,3516804,sim
+General Salgado,SP,46.2,3516903,sim
+Guarani d'Oeste,SP,28.2,3518008,sim
+Guzolândia,SP,43.0,3518909,sim
+Ilha Solteira,SP,85.0,3520442,sim
+Indiaporã,SP,41.7,3520707,sim
+Iturama,MG,70.3,3134400,sim
+Limeira do Oeste,MG,80.0,3138625,sim
+Macaubal,SP,84.9,3528106,sim
+Macedônia,SP,39.4,3528205,sim
+Magda,SP,52.8,3528304,sim
+Marinópolis,SP,34.5,3529104,sim
+Meridiano,SP,38.9,3529609,sim
+Mesópolis,SP,47.8,3529658,sim
+Mira Estrela,SP,52.9,3530003,sim
+Monções,SP,76.9,3531001,sim
+Monte Aprazível,SP,103.1,3531407,sim
+Nhandeara,SP,71.3,3532603,sim
+Nipoã,SP,101.0,3532702,sim
+Nova Canaã Paulista,SP,43.1,3532843,sim
+Nova Castilho,SP,59.1,3532868,sim
+Nova Luzitânia,SP,72.2,3533304,sim
+Ouroeste,SP,35.3,3534757,sim
+Palmeira d'Oeste,SP,28.1,3535200,sim
+Paranaíba,MS,94.2,5006309,sim
+Paranapuã,SP,35.0,3535903,sim
+Parisi,SP,55.9,3536257,sim
+Pedranópolis,SP,45.2,3536901,sim
+Pereira Barreto,SP,71.7,3537404,sim
+Poloni,SP,95.2,3539905,sim
+Pontalinda,SP,18.7,3540259,sim
+Pontes Gestal,SP,86.7,3540309,sim
+Populina,SP,34.9,3540408,sim
+Riolândia,SP,94.9,3544202,sim
+Rubinéia,SP,49.3,3544509,sim
+Santa Albertina,SP,32.8,3545704,sim
+Santa Clara d'Oeste,SP,45.9,3546108,sim
+Santa Fé do Sul,SP,40.2,3546603,sim
+Santa Rita d'Oeste,SP,32.6,3547403,sim
+Santa Salete,SP,14.7,3547650,sim
+São Francisco,SP,20.4,3549003,sim
+São Francisco de Sales,MG,92.9,3161304,sim
+São João das Duas Pontes,SP,21.9,3549201,sim
+São João de Iracema,SP,34.9,3549250,sim
+Sebastianópolis do Sul,SP,76.9,3551306,sim
+Selvíria,MS,91.7,5007802,sim
+Sud Mennucci,SP,60.5,3552304,sim
+Suzanápolis,SP,54.3,3552551,sim
+Tanabi,SP,101.4,3553401,sim
+Três Fronteiras,SP,36.5,3554904,sim
+Turmalina,SP,25.2,3555307,sim
+União de Minas,MG,96.8,3170438,sim
+Urânia,SP,10.5,3555802,sim
+Valentim Gentil,SP,51.4,3556107,sim
+Vitória Brasil,SP,9.9,3556958,sim
+Votuporanga,SP,61.6,3557105,sim
+Zacarias,SP,100.5,3557154,sim
+Adolfo,SP,54.3,3500204,sim
+Ariranha,SP,72.1,3503703,sim
+Bady Bassitt,SP,13.7,3504602,sim
+Balbinos,SP,101.0,3504701,sim
+Bálsamo,SP,23.1,3504800,sim
+Barbosa,SP,77.4,3505104,sim
+Barretos,SP,89.2,3505500,sim
+Bebedouro,SP,94.7,3506102,sim
+Borborema,SP,95.4,3507407,sim
+Cajobi,SP,60.1,3509304,sim
+Cândido Rodrigues,SP,96.1,3510104,sim
+Catanduva,SP,55.6,3511102,sim
+Catiguá,SP,42.7,3511201,sim
+Cedral,SP,15.6,3511300,sim
+Colina,SP,88.0,3512001,sim
+Colômbia,SP,100.7,3512100,sim
+Elisiário,SP,47.5,3514924,sim
+Embaúba,SP,59.1,3514957,sim
+Fernando Prestes,SP,88.7,3515608,sim
+Fronteira,MG,62.0,3127008,sim
+Frutal,MG,99.2,3127107,sim
+Guaiçara,SP,99.9,3517208,sim
+Guapiaçu,SP,16.5,3517505,sim
+Guaraci,SP,56.7,3517901,sim
+Ibirá,SP,33.2,3519402,sim
+Icém,SP,55.7,3519808,sim
+Ipiguá,SP,17.1,3521150,sim
+Irapuã,SP,52.1,3521507,sim
+Itapagipe,MG,100.3,3133402,sim
+Itápolis,SP,104.4,3522703,sim
+Jaci,SP,22.2,3524501,sim
+José Bonifácio,SP,41.9,3525706,sim
+Lins,SP,103.5,3527108,sim
+Marapoama,SP,55.5,3528858,sim
+Mendonça,SP,45.0,3529500,sim
+Mirassol,SP,14.8,3530300,sim
+Mirassolândia,SP,24.0,3530409,sim
+Monte Alto,SP,104.4,3531308,sim
+Monte Azul Paulista,SP,77.4,3531506,sim
+Neves Paulista,SP,26.6,3532504,sim
+Nova Aliança,SP,25.4,3532801,sim
+Nova Granada,SP,31.8,3533007,sim
+Novais,SP,53.1,3533254,sim
+Novo Horizonte,SP,74.7,3533502,sim
+Olímpia,SP,49.0,3533908,sim
+Onda Verde,SP,25.3,3534005,sim
+Orindiúva,SP,69.2,3534203,sim
+Palestina,SP,47.2,3535002,sim
+Palmares Paulista,SP,67.3,3535101,sim
+Paraíso,SP,66.2,3535705,sim
+Paulo de Faria,SP,97.0,3536604,sim
+Penápolis,SP,99.1,3537305,sim
+Pindorama,SP,64.3,3538105,sim
+Pirangi,SP,80.8,3539004,sim
+Planalto,SP,62.1,3539608,sim
+Planura,MG,104.3,3151602,sim
+Pongaí,SP,104.4,3540101,sim
+Potirendaba,SP,25.7,3540804,sim
+Promissão,SP,94.7,3541604,sim
+Sabino,SP,75.0,3544608,sim
+Sales,SP,59.9,3544806,sim
+Santa Adélia,SP,76.5,3545605,sim
+Severínia,SP,60.0,3551900,sim
+Taiaçu,SP,97.3,3553104,sim
+Taiúva,SP,101.3,3553203,sim
+Ubarana,SP,52.5,3555356,sim
+Uchôa,SP,26.5,3555604,sim
+União Paulista,SP,47.9,3555703,sim
+Urupês,SP,44.6,3556008,sim
+Vista Alegre do Alto,SP,88.3,3556909,sim
