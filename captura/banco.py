@@ -211,3 +211,17 @@ def consultar_historico(conexao, dias=None):
         linhas.append(linha_dict)
 
     return linhas
+
+
+def atualizar_segmentos(conexao, numero_controle_pncp, novos_segmentos):
+    """Corrige so a coluna segmentos (e marca atualizado_em) de uma linha
+    que ja existe no banco, sem mexer no resto. Usada quando o
+    keywords.yaml muda depois que o edital ja foi salvo (ver
+    scripts/ressincronizar_banco.py): o edital continua no banco, so o
+    segmento gravado e que fica desatualizado ate isso rodar.
+    """
+    conexao.execute(
+        "UPDATE editais SET segmentos = ?, atualizado_em = ? WHERE numero_controle_pncp = ?",
+        (json.dumps(novos_segmentos, ensure_ascii=False), datetime.now().isoformat(), numero_controle_pncp),
+    )
+    conexao.commit()

@@ -1,0 +1,29 @@
+# Identidade visual da NexLicit, tirada do nexlicit-landing.html.
+# Isso cobre cor e fonte GLOBAL do app. Coisas de estilo pontual (cor de
+# fundo do card, o rotulo "eyebrow" monoespacado) sao feitas com HTML/CSS
+# customizado direto onde aparecem (painel/app.py), nao aqui.
+
+[theme]
+# brass: cor de destaque, links, elementos interativos
+primaryColor = "#A2782A"
+
+# paper: fundo geral do app (bege claro)
+backgroundColor = "#F1ECE0"
+
+# paper-deep: fundo de elementos secundarios (sidebar, widgets)
+secondaryBackgroundColor = "#E4DCC8"
+
+# ink: cor do texto principal
+textColor = "#12233D"
+
+linkColor = "#A2782A"
+borderColor = "#E4DCC8"
+
+# corpo do texto: sans-serif (IBM Plex Sans)
+font = "IBM Plex Sans:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+
+# titulos: serifada (Newsreader)
+headingFont = "Newsreader:https://fonts.googleapis.com/css2?family=Newsreader:wght@400;600;700&display=swap"
+
+# codigo/rotulos tecnicos: monoespacada (IBM Plex Mono)
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
