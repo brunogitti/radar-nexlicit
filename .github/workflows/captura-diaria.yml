@@ -9,6 +9,8 @@ on:
 jobs:
   capturar:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # precisa poder empurrar (push) pra branch "data" no final
     steps:
       - name: Baixar o codigo do repositorio
         uses: actions/checkout@v4
@@ -22,22 +24,20 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      # Restaura o dados/radar.db salvo na execucao anterior, pra manter a
-      # deduplicacao funcionando entre uma execucao e outra (o runner do
-      # GitHub Actions comeca vazio toda vez, sem isso todo edital
-      # pareceria novo de novo a cada execucao).
-      #
-      # A chave inclui o run_id (sempre diferente), entao salvar no final
-      # do job nunca esbarra numa chave repetida. O restore-keys busca a
-      # chave mais recente que comeca com "radar-db-", que e o banco
-      # salvo pela ultima execucao.
-      - name: Restaurar o banco de dados ja vistos
-        uses: actions/cache@v4
-        with:
-          path: dados/radar.db
-          key: radar-db-${{ github.run_id }}
-          restore-keys: |
-            radar-db-
+      # A branch "data" e a unica fonte de persistencia do dados/radar.db
+      # agora: e nela que o banco fica salvo entre uma execucao e outra, e
+      # e ela tambem que o painel no Streamlit Cloud le pra mostrar os
+      # editais. Aqui a gente busca o banco salvo pela ultima execucao,
+      # se existir.
+      - name: Restaurar o banco de dados ja vistos (branch data)
+        run: |
+          mkdir -p dados
+          if git fetch origin data 2>/dev/null && git show origin/data:dados/radar.db > dados/radar.db 2>/dev/null; then
+            echo "Banco restaurado da branch data (execucao anterior)."
+          else
+            echo "Branch data ainda nao tem banco salvo, comecando do zero."
+            rm -f dados/radar.db
+          fi
 
       - name: Rodar os testes automatizados
         run: python -m pytest tests/ -q
@@ -47,3 +47,20 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python main.py --dias 7 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
+
+      # Publica o banco atualizado na branch "data": pega o codigo atual
+      # (o mesmo da master, ja que o checkout no inicio do job partiu
+      # dela) e adiciona so o dados/radar.db por cima. O --force
+      # sobrescreve o commit anterior da branch data em vez de acumular
+      # um commit novo a cada execucao, entao o historico dela nunca
+      # cresce. Ela existe so pra alimentar o painel, nao faz parte do
+      # historico "de portfolio" do projeto (isso continua sendo so a
+      # branch master).
+      - name: Publicar o banco atualizado na branch data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B data
+          git add -f dados/radar.db
+          git commit -m "Atualiza banco de editais ($(date -u +'%d/%m/%Y %H:%M UTC'))" --allow-empty
+          git push --force origin data
