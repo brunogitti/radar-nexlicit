@@ -1,0 +1,49 @@
+name: Captura diaria
+
+on:
+  schedule:
+    - cron: "0 10 * * *" # 7h no horario de Brasilia (UTC-3)
+    - cron: "0 16 * * *" # 13h no horario de Brasilia (UTC-3)
+  workflow_dispatch: {} # permite rodar manualmente pela interface do GitHub, pra testar
+
+jobs:
+  capturar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o codigo do repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # Restaura o dados/radar.db salvo na execucao anterior, pra manter a
+      # deduplicacao funcionando entre uma execucao e outra (o runner do
+      # GitHub Actions comeca vazio toda vez, sem isso todo edital
+      # pareceria novo de novo a cada execucao).
+      #
+      # A chave inclui o run_id (sempre diferente), entao salvar no final
+      # do job nunca esbarra numa chave repetida. O restore-keys busca a
+      # chave mais recente que comeca com "radar-db-", que e o banco
+      # salvo pela ultima execucao.
+      - name: Restaurar o banco de dados ja vistos
+        uses: actions/cache@v4
+        with:
+          path: dados/radar.db
+          key: radar-db-${{ github.run_id }}
+          restore-keys: |
+            radar-db-
+
+      - name: Rodar os testes automatizados
+        run: python -m pytest tests/ -q
+
+      - name: Capturar editais e enviar e-mail
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py --dias 7 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
