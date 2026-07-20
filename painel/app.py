@@ -9,7 +9,7 @@ Como rodar (com o venv ativado, na pasta do projeto):
 import html
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 # Streamlit roda este arquivo como um script solto, nao como parte de um
@@ -49,7 +49,25 @@ def _logo_svg(tamanho=30):
 # st.image, que e o que o st.set_page_config reaproveita por baixo).
 st.set_page_config(page_title="Radar NexLicit", page_icon=_logo_svg(), layout="wide")
 
-ITENS_POR_PAGINA = 10
+# A partir de quantos dias pra encerrar a proposta um edital e marcado
+# como "vencimento proximo" no card (ver _eh_urgente).
+DIAS_LIMIAR_URGENTE = 3
+
+
+def _formatar_valor_reais(valor):
+    """Formata no padrao brasileiro (R$ 5.610,00), diferente do
+    formatar_valor de captura/apresentacao.py (que usa R$ 5610.00, pro
+    e-mail e terminal). Fica local ao painel de proposito, pra nao mudar
+    a formatacao que ja existe e ja tem teste em outro lugar.
+    """
+    if not valor:
+        return "valor não informado"
+    # .2f com virgula de milhar da o formato americano (5,610.00). Troca
+    # virgula<->ponto (usando "_" como marcador temporario) pra chegar no
+    # formato brasileiro (5.610,00).
+    texto_americano = f"{valor:,.2f}"
+    texto_brasileiro = texto_americano.replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"R$ {texto_brasileiro}"
 
 
 @st.cache_data(ttl=60)
@@ -83,24 +101,33 @@ def _renderizar_cabecalho():
     NexLicit em negrito, mesma linha), com a tagline institucional
     embaixo no estilo eyebrow (monoespacado, versalete, letter-spacing
     largo), igual a landing page usa.
+
+    Faixa de fundo navy (pedido explicito: mais presenca dessa cor no
+    painel). O simbolo ganha um "selo" claro atras dele (fundo papel,
+    cantos arredondados) porque o proprio simbolo tem fundo navy: sem
+    esse selo, o quadrado do simbolo desaparece dentro da faixa navy do
+    cabecalho, sobrando so o check dourado boiando sem contorno.
     """
     st.markdown(
         f"""
-        <div style="display:flex; align-items:center; gap:12px;">
-            {_logo_svg(40)}
-            <div style="font-family:'Newsreader',serif; font-size:2.2rem; line-height:1.1; color:{COR_INK};">
-                <span style="font-weight:400;">Radar</span>
-                <span style="font-weight:700;">NexLicit</span>
+        <div style="background-color:{COR_INK}; border-radius:8px; padding:18px 24px; margin-bottom:20px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div style="background-color:{COR_PAPER}; border-radius:10px; padding:4px; display:flex;">
+                    {_logo_svg(32)}
+                </div>
+                <div style="font-family:'Newsreader',serif; font-size:2.2rem; line-height:1.1; color:{COR_PAPER};">
+                    <span style="font-weight:400;">Radar</span>
+                    <span style="font-weight:700;">NexLicit</span>
+                </div>
+            </div>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:0.72rem; letter-spacing:0.14em;
+                        color:{COR_BRASS}; margin:4px 0 0 52px;">
+                CONSULTORIA EM LICITAÇÕES
             </div>
         </div>
-        <div style="font-family:'IBM Plex Mono',monospace; font-size:0.72rem; letter-spacing:0.14em;
-                    color:{COR_BRASS}; margin:4px 0 20px 52px;">
-            CONSULTORIA EM LICITAÇÕES
-        </div>
         """,
-        # margin-left:52px = 40px do simbolo + 12px do espaco entre ele e o
-        # texto, pra tagline ficar alinhada embaixo de "Radar NexLicit",
-        # nao embaixo do simbolo.
+        # margin-left:52px = 40px do selo do simbolo + 12px do espaco ate
+        # o texto, pra tagline ficar alinhada embaixo de "Radar NexLicit".
         unsafe_allow_html=True,
     )
 
@@ -172,6 +199,28 @@ def montar_filtros(editais):
         value=(0.0, float(maior_valor) if maior_valor else 1.0),
     )
 
+    st.sidebar.subheader("Leva de captação")
+
+    # Igual ao slider de valor: o padrao cobre do mais antigo ao mais
+    # novo que existe no banco, entao esse filtro comeca sem esconder
+    # nada. So passa a restringir de verdade quando o usuario mexer.
+    datas_captacao = [datetime.fromisoformat(e["visto_em"]).date() for e in editais]
+    captacao_min_padrao = min(datas_captacao, default=hoje)
+    intervalo_captacao_padrao = (captacao_min_padrao, hoje)
+    intervalo_captacao_escolhido = st.sidebar.date_input(
+        "Captado entre (data)", value=intervalo_captacao_padrao
+    )
+    if len(intervalo_captacao_escolhido) == 2:
+        captacao_data_inicial, captacao_data_final = intervalo_captacao_escolhido
+    else:
+        captacao_data_inicial, captacao_data_final = intervalo_captacao_padrao
+
+    col_hora_inicial, col_hora_final = st.sidebar.columns(2)
+    with col_hora_inicial:
+        captacao_hora_inicial = st.time_input("Das", value=time(0, 0))
+    with col_hora_final:
+        captacao_hora_final = st.time_input("Até", value=time(23, 59))
+
     return {
         "municipios": municipios_selecionados,
         "segmentos": segmentos_selecionados,
@@ -181,6 +230,8 @@ def montar_filtros(editais):
         "me_epp": me_epp,
         "valor_min": valor_min,
         "valor_max": valor_max,
+        "captacao_inicio": datetime.combine(captacao_data_inicial, captacao_hora_inicial),
+        "captacao_fim": datetime.combine(captacao_data_final, captacao_hora_final),
     }
 
 
@@ -217,9 +268,32 @@ def aplicar_filtros(editais, filtros):
         if not (filtros["valor_min"] <= valor <= filtros["valor_max"]):
             continue
 
+        visto_em = datetime.fromisoformat(edital["visto_em"])
+        if not (filtros["captacao_inicio"] <= visto_em <= filtros["captacao_fim"]):
+            continue
+
         resultado.append(edital)
 
     return resultado
+
+
+def _ordenar(editais, criterio):
+    """criterio e um dos textos do seletor em main(): ordena por captacao
+    (mais recente primeiro) ou por prazo de encerramento (mais proximo
+    de fechar primeiro, que e o mais urgente).
+    """
+    if criterio == "Captação (mais recente)":
+        return sorted(editais, key=lambda e: datetime.fromisoformat(e["visto_em"]), reverse=True)
+    return sorted(editais, key=lambda e: datetime.fromisoformat(e["data_encerramento_proposta"]))
+
+
+def _eh_urgente(prazo):
+    """True se faltam de 0 a DIAS_LIMIAR_URGENTE dias pro encerramento da
+    proposta (prazos ja vencidos nao contam aqui, isso e um estado
+    diferente de "urgente", fora do escopo desta entrega).
+    """
+    dias_restantes = (prazo.date() - date.today()).days
+    return 0 <= dias_restantes <= DIAS_LIMIAR_URGENTE
 
 
 def _destacar_termos(texto, termos, min_radical):
@@ -254,7 +328,7 @@ def _destacar_termos(texto, termos, min_radical):
     return re.sub(r"\w+", repor, texto_escapado)
 
 
-def _renderizar_badges(edital):
+def _renderizar_badges(edital, urgente):
     pedacos = []
     for match in edital["segmentos"]:
         pedacos.append(
@@ -265,7 +339,16 @@ def _renderizar_badges(edital):
     if _tem_selo_me_epp(edital["beneficios_itens"]):
         pedacos.append(
             f'<span style="background:{COR_INK}; color:{COR_PAPER}; padding:2px 10px; '
-            f'border-radius:999px; font-size:0.75rem; font-weight:600;">ME/EPP</span>'
+            f'border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:6px;">ME/EPP</span>'
+        )
+    if urgente:
+        # Mesma cor navy do selo ME/EPP acima, de proposito: o dourado
+        # fica reservado pro significado "achei a palavra-chave", navy
+        # aqui sinaliza "preste atencao", sao duas linguagens visuais
+        # separadas.
+        pedacos.append(
+            f'<span style="background:{COR_INK}; color:{COR_PAPER}; padding:2px 10px; '
+            f'border-radius:999px; font-size:0.75rem; font-weight:600;">Encerra em breve</span>'
         )
     return "".join(pedacos)
 
@@ -282,9 +365,14 @@ def _renderizar_card(edital, min_radical):
     # de informacao; metadados um pouco mais separados, porque mudam de
     # assunto; respiro maior antes do "Ver mais detalhes", pra ele nao
     # parecer colado no texto acima).
-    with st.container(border=True, key=f"card_{edital['numero_controle_pncp']}", gap=None):
-        prazo = datetime.fromisoformat(edital["data_encerramento_proposta"])
+    # prazo e urgente precisam existir ANTES de abrir o container, porque
+    # a chave do container muda de nome quando o edital e urgente (e o
+    # que aciona a borda de destaque em _aplicar_estilo_dos_cards).
+    prazo = datetime.fromisoformat(edital["data_encerramento_proposta"])
+    urgente = _eh_urgente(prazo)
+    sufixo_chave = "_urgente" if urgente else ""
 
+    with st.container(border=True, key=f"card_{edital['numero_controle_pncp']}{sufixo_chave}", gap=None):
         st.markdown(
             f'<div style="font-family:\'Newsreader\',serif; font-size:1.15rem; '
             f'font-weight:600; color:{COR_INK};">{edital["orgao"]}</div>',
@@ -292,15 +380,19 @@ def _renderizar_card(edital, min_radical):
         )
 
         st.markdown(
-            f'<div style="margin-top:12px;">{_renderizar_badges(edital)}</div>',
+            f'<div style="margin-top:12px;">{_renderizar_badges(edital, urgente)}</div>',
             unsafe_allow_html=True,
         )
 
+        visto_em = datetime.fromisoformat(edital["visto_em"])
         st.markdown(
             f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.7rem; '
             f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.7; '
             f'margin-top:14px;">{edital["modalidade"]} · {edital["municipio"]}/{edital["uf"]} · '
-            f'encerra {prazo:%d/%m/%Y}</div>',
+            f'encerra {prazo:%d/%m/%Y} · {_formatar_valor_reais(edital["valor_estimado"])}</div>'
+            f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
+            f'color:{COR_INK}; opacity:0.5; margin-top:4px;">'
+            f'Captado em {visto_em:%d/%m/%Y às %H:%M}</div>',
             unsafe_allow_html=True,
         )
 
@@ -316,15 +408,15 @@ def _renderizar_card(edital, min_radical):
             st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
 
 
-def _paginar(lista):
+def _paginar(lista, itens_por_pagina):
     if "pagina_atual" not in st.session_state:
         st.session_state.pagina_atual = 1
 
-    total_paginas = max(1, -(-len(lista) // ITENS_POR_PAGINA))
+    total_paginas = max(1, -(-len(lista) // itens_por_pagina))
     pagina_atual = min(st.session_state.pagina_atual, total_paginas)
 
-    inicio = (pagina_atual - 1) * ITENS_POR_PAGINA
-    return lista[inicio:inicio + ITENS_POR_PAGINA], pagina_atual, total_paginas
+    inicio = (pagina_atual - 1) * itens_por_pagina
+    return lista[inicio:inicio + itens_por_pagina], pagina_atual, total_paginas
 
 
 def _controles_paginacao(pagina_atual, total_paginas):
@@ -369,6 +461,12 @@ def _aplicar_estilo_dos_cards():
             padding: 16px;
             margin-bottom: 4px;
         }}
+        /* "urgente" so aparece na classe de cards com vencimento
+        proximo (ver sufixo_chave em _renderizar_card), nunca em
+        numero_controle_pncp, entao esse seletor nunca pega card errado. */
+        [class*="st-key-card_"][class*="urgente"] {{
+            border-left: 4px solid {COR_INK};
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -384,10 +482,21 @@ def main():
     filtros = montar_filtros(editais)
     editais_filtrados = aplicar_filtros(editais, filtros)
 
-    # se o filtro mudou desde a ultima vez, volta pra pagina 1: senao o
-    # usuario podia ficar "preso" numa pagina 4 que nao existe mais
-    # depois de estreitar o filtro.
-    assinatura_filtros = tuple(filtros.items())
+    col_ordenacao, col_itens_por_pagina = st.columns([3, 1])
+    with col_ordenacao:
+        ordenacao = st.selectbox(
+            "Ordenar por", ["Captação (mais recente)", "Encerramento (mais próximo)"]
+        )
+    with col_itens_por_pagina:
+        itens_por_pagina = st.selectbox("Itens por página", [10, 25, 50])
+
+    editais_filtrados = _ordenar(editais_filtrados, ordenacao)
+
+    # se o filtro, a ordenacao ou o tamanho da pagina mudou desde a
+    # ultima vez, volta pra pagina 1: senao o usuario podia ficar
+    # "preso" numa pagina 4 que nao existe mais depois de estreitar o
+    # filtro ou pedir mais itens por pagina.
+    assinatura_filtros = (tuple(filtros.items()), ordenacao, itens_por_pagina)
     if st.session_state.get("assinatura_filtros_anterior") != assinatura_filtros:
         st.session_state.pagina_atual = 1
         st.session_state["assinatura_filtros_anterior"] = assinatura_filtros
@@ -398,7 +507,7 @@ def main():
     with st.container(gap="xsmall"):
         st.write(f"**{len(editais_filtrados)}** de {len(editais)} edital(is) no banco batem com o filtro atual.")
 
-        editais_da_pagina, pagina_atual, total_paginas = _paginar(editais_filtrados)
+        editais_da_pagina, pagina_atual, total_paginas = _paginar(editais_filtrados, itens_por_pagina)
 
         for edital in editais_da_pagina:
             _renderizar_card(edital, min_radical)
