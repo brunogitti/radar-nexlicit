@@ -13,28 +13,18 @@ Como rodar (com o venv ja ativado):
 """
 
 import csv
-import unicodedata
+import sys
 from pathlib import Path
 
 import requests
 
-CAMINHO_CSV = Path(__file__).resolve().parent.parent / "config" / "municipios.csv"
+RAIZ_DO_PROJETO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RAIZ_DO_PROJETO))
+
+from captura.normalizacao import normalizar_texto
+
+CAMINHO_CSV = RAIZ_DO_PROJETO / "config" / "municipios.csv"
 URL_IBGE = "https://servicodados.ibge.gov.br/api/v1/localidades/estados/{uf}/municipios"
-
-
-def normalizar_nome(nome):
-    """Deixa o nome minusculo e sem acento, para comparar 'Dolcinópolis' com 'dolcinopolis'.
-
-    unicodedata.normalize('NFKD', nome) separa cada letra acentuada em duas
-    partes: a letra normal e o acento como um caractere "combinante" a parte
-    (ex.: 'ó' vira 'o' + acento). O laco abaixo entao descarta qualquer
-    caractere que unicodedata.combining() reconhece como um desses acentos,
-    sobrando so a letra sem acento.
-    """
-    nome = nome.strip().lower()
-    nome_sem_acento = unicodedata.normalize("NFKD", nome)
-    letras = [c for c in nome_sem_acento if not unicodedata.combining(c)]
-    return "".join(letras)
 
 
 def buscar_municipios_do_ibge(uf):
@@ -48,7 +38,7 @@ def buscar_municipios_do_ibge(uf):
 
     mapa = {}
     for municipio in municipios:
-        nome_normalizado = normalizar_nome(municipio["nome"])
+        nome_normalizado = normalizar_texto(municipio["nome"])
         mapa[nome_normalizado] = str(municipio["id"])
     return mapa
 
@@ -71,7 +61,7 @@ def resolver_codigos_ibge():
     total_casou = 0
 
     for linha in linhas:
-        nome_normalizado = normalizar_nome(linha["municipio"])
+        nome_normalizado = normalizar_texto(linha["municipio"])
         mapa_da_uf = mapa_por_uf[linha["uf"]]
 
         if nome_normalizado in mapa_da_uf:

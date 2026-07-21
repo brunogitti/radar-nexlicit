@@ -30,10 +30,6 @@ sys.path.insert(0, str(RAIZ_DO_PROJETO))
 
 from captura import banco, pncp_client
 
-# Mesma pausa que main.py usa entre municipios: evita bater no limite de
-# requisicoes do PNCP (nao documentado, mas real na pratica).
-PAUSA_ENTRE_CHAMADAS_SEGUNDOS = 1.5
-
 
 def preencher_itens_faltantes():
     conexao = banco.conectar()
@@ -43,11 +39,11 @@ def preencher_itens_faltantes():
     total_com_itens_novos = 0
 
     for linha in linhas:
-        if banco.buscar_itens_do_edital(conexao, linha["numero_controle_pncp"]):
+        if banco.consultar_itens_do_edital(conexao, linha["numero_controle_pncp"]):
             continue  # ja tem item salvo, nao busca de novo
 
         if total_chamadas > 0:
-            time.sleep(PAUSA_ENTRE_CHAMADAS_SEGUNDOS)
+            time.sleep(pncp_client.PAUSA_ENTRE_CHAMADAS_SEGUNDOS)
         total_chamadas += 1
 
         cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(linha["link_pncp"])

@@ -25,6 +25,12 @@ import streamlit as st
 from captura import banco, filtro, pncp_client
 from captura.normalizacao import normalizar_texto
 
+# COR_INK, COR_PAPER e COR_BRASS tambem existem copiadas em
+# .streamlit/config.toml (textColor, backgroundColor, primaryColor), o
+# tema global do Streamlit. Nao da pra ler o tema daqui em tempo de
+# execucao sem complicar o codigo, entao mudou uma cor aqui, mudar a
+# mesma la tambem. COR_CARD nao tem equivalente no tema (e so o fundo
+# do card, um estilo pontual nosso, nao faz parte do tema global).
 COR_INK = "#12233D"
 COR_PAPER = "#F1ECE0"
 COR_BRASS = "#A2782A"
@@ -93,7 +99,7 @@ def carregar_itens(numero_controle_pncp):
     os editais de uma vez, por isso não está junto de carregar_editais.
     """
     conexao = banco.conectar()
-    itens = banco.buscar_itens_do_edital(conexao, numero_controle_pncp)
+    itens = banco.consultar_itens_do_edital(conexao, numero_controle_pncp)
     conexao.close()
     return itens
 
@@ -189,6 +195,42 @@ def _tem_selo_me_epp(beneficios_itens):
     return any(beneficio != "Sem benefício" for beneficio in beneficios_itens)
 
 
+def _montar_filtro_captacao(editais, hoje):
+    """Filtro de "leva de captacao" (data + hora sobre visto_em), na
+    sidebar. Extraido de montar_filtros porque esse bloco sozinho ja usa
+    4 widgets, o que deixava a funcao principal grande demais.
+
+    Devolve (captacao_inicio, captacao_fim) ja combinados em datetime,
+    prontos pro dict que montar_filtros devolve.
+    """
+    st.sidebar.subheader("Leva de captação")
+
+    # Igual ao slider de valor: o padrao cobre do mais antigo ao mais
+    # novo que existe no banco, entao esse filtro comeca sem esconder
+    # nada. So passa a restringir de verdade quando o usuario mexer.
+    datas_captacao = [datetime.fromisoformat(e["visto_em"]).date() for e in editais]
+    captacao_min_padrao = min(datas_captacao, default=hoje)
+    intervalo_captacao_padrao = (captacao_min_padrao, hoje)
+    intervalo_captacao_escolhido = st.sidebar.date_input(
+        "Captado entre (data)", value=intervalo_captacao_padrao
+    )
+    if len(intervalo_captacao_escolhido) == 2:
+        captacao_data_inicial, captacao_data_final = intervalo_captacao_escolhido
+    else:
+        captacao_data_inicial, captacao_data_final = intervalo_captacao_padrao
+
+    col_hora_inicial, col_hora_final = st.sidebar.columns(2)
+    with col_hora_inicial:
+        captacao_hora_inicial = st.time_input("Das", value=time(0, 0))
+    with col_hora_final:
+        captacao_hora_final = st.time_input("Até", value=time(23, 59))
+
+    return (
+        datetime.combine(captacao_data_inicial, captacao_hora_inicial),
+        datetime.combine(captacao_data_final, captacao_hora_final),
+    )
+
+
 def montar_filtros(editais):
     """Desenha a barra de filtros na sidebar e devolve um dicionario com
     o que o usuario escolheu.
@@ -225,27 +267,7 @@ def montar_filtros(editais):
         value=(0.0, float(maior_valor) if maior_valor else 1.0),
     )
 
-    st.sidebar.subheader("Leva de captação")
-
-    # Igual ao slider de valor: o padrao cobre do mais antigo ao mais
-    # novo que existe no banco, entao esse filtro comeca sem esconder
-    # nada. So passa a restringir de verdade quando o usuario mexer.
-    datas_captacao = [datetime.fromisoformat(e["visto_em"]).date() for e in editais]
-    captacao_min_padrao = min(datas_captacao, default=hoje)
-    intervalo_captacao_padrao = (captacao_min_padrao, hoje)
-    intervalo_captacao_escolhido = st.sidebar.date_input(
-        "Captado entre (data)", value=intervalo_captacao_padrao
-    )
-    if len(intervalo_captacao_escolhido) == 2:
-        captacao_data_inicial, captacao_data_final = intervalo_captacao_escolhido
-    else:
-        captacao_data_inicial, captacao_data_final = intervalo_captacao_padrao
-
-    col_hora_inicial, col_hora_final = st.sidebar.columns(2)
-    with col_hora_inicial:
-        captacao_hora_inicial = st.time_input("Das", value=time(0, 0))
-    with col_hora_final:
-        captacao_hora_final = st.time_input("Até", value=time(23, 59))
+    captacao_inicio, captacao_fim = _montar_filtro_captacao(editais, hoje)
 
     return {
         "municipios": municipios_selecionados,
@@ -256,8 +278,8 @@ def montar_filtros(editais):
         "me_epp": me_epp,
         "valor_min": valor_min,
         "valor_max": valor_max,
-        "captacao_inicio": datetime.combine(captacao_data_inicial, captacao_hora_inicial),
-        "captacao_fim": datetime.combine(captacao_data_final, captacao_hora_final),
+        "captacao_inicio": captacao_inicio,
+        "captacao_fim": captacao_fim,
     }
 
 
@@ -485,80 +507,105 @@ def _renderizar_documentos(documentos):
             )
 
 
+def _renderizar_identidade_do_card(edital, urgente):
+    """Nome do orgao + badges (segmento, ME/EPP, urgencia): a parte que
+    identifica rapidamente do que se trata o card.
+    """
+    st.markdown(
+        f'<div style="font-family:\'Newsreader\',serif; font-size:1.15rem; '
+        f'font-weight:600; color:{COR_INK};">{edital["orgao"]}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div style="margin-top:12px;">{_renderizar_badges(edital, urgente)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _renderizar_metadados_do_card(edital, prazo):
+    """Linha de modalidade/municipio/prazo/valor, mais a linha discreta
+    de quando o edital foi captado.
+    """
+    visto_em = datetime.fromisoformat(edital["visto_em"])
+    st.markdown(
+        f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.7rem; '
+        f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.7; '
+        f'margin-top:14px;">{edital["modalidade"]} · {edital["municipio"]}/{edital["uf"]} · '
+        f'encerra {prazo:%d/%m/%Y} · {_formatar_valor_reais(edital["valor_estimado"])}</div>'
+        f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
+        f'color:{COR_INK}; opacity:0.5; margin-top:4px;">'
+        f'Captado em {visto_em:%d/%m/%Y às %H:%M}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _renderizar_resumo_do_objeto(edital, todos_os_termos, min_radical):
+    objeto_resumido = edital["objeto"][:220] + ("…" if len(edital["objeto"]) > 220 else "")
+    st.markdown(
+        f'<div style="margin:12px 0 16px 0;">{_destacar_termos(objeto_resumido, todos_os_termos, min_radical)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _renderizar_detalhes_do_card(edital, todos_os_termos, min_radical):
+    """Conteudo do "ver mais detalhes": objeto completo, link pro PNCP,
+    tabela de itens e botoes de documento.
+
+    on_change="rerun" + .open e o que permite pular a consulta ao banco
+    (carregar_itens) e a chamada ao vivo na API (carregar_arquivos)
+    enquanto o expander estiver fechado. Sem isso, por padrao o
+    Streamlit executa o conteudo do expander mesmo fechado, e a gente ia
+    buscar item/documento de TODO card da pagina toda vez, nao so do
+    que o usuario realmente abriu.
+    """
+    detalhes = st.expander(
+        "Ver mais detalhes", on_change="rerun", key=f"detalhes_{edital['numero_controle_pncp']}"
+    )
+    with detalhes:
+        st.markdown(_destacar_termos(edital["objeto"], todos_os_termos, min_radical), unsafe_allow_html=True)
+        st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
+
+        if detalhes.open:
+            itens = carregar_itens(edital["numero_controle_pncp"])
+            _renderizar_itens(itens, todos_os_termos, min_radical)
+
+            st.markdown(
+                f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
+                f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.6; '
+                f'margin-top:16px; margin-bottom:6px;">Documentos</div>',
+                unsafe_allow_html=True,
+            )
+            documentos = carregar_arquivos(edital["link_pncp"])
+            _renderizar_documentos(documentos)
+
+
 def _renderizar_card(edital, min_radical):
-    # gap=None tira o espacamento automatico que o Streamlit poe entre
-    # cada st.markdown aqui dentro. Sem isso, o respiro real de cada
-    # bloco era o espacamento automatico (sempre o mesmo, 16px) mais a
-    # margem que a gente escrevia por cima, dai ficava inconsistente:
-    # uns blocos pareciam colados, outros soltos, sem motivo claro. Com
-    # gap=None, a margem que a gente escreve em cada div e a unica coisa
-    # que decide o espaco, entao da pra ajustar o ritmo visual de
-    # verdade (orgao+badges mais proximos, porque sao a mesma "familia"
-    # de informacao; metadados um pouco mais separados, porque mudam de
-    # assunto; respiro maior antes do "Ver mais detalhes", pra ele nao
-    # parecer colado no texto acima).
-    # prazo e urgente precisam existir ANTES de abrir o container, porque
-    # a chave do container muda de nome quando o edital e urgente (e o
-    # que aciona a borda de destaque em _aplicar_estilo_dos_cards).
+    """Um card do painel: monta o container (com a borda de urgencia
+    quando for o caso) e chama, em ordem, cada pedaco que compoe o card.
+
+    gap=None tira o espacamento automatico que o Streamlit poe entre os
+    elementos do container. Sem isso, o respiro real de cada bloco era
+    o espacamento automatico (sempre o mesmo, 16px) mais a margem que a
+    gente escrevia por cima, dai ficava inconsistente: uns blocos
+    pareciam colados, outros soltos, sem motivo claro. Com gap=None, a
+    margem que cada funcao abaixo escreve e a unica coisa que decide o
+    espaco.
+
+    prazo e urgente precisam existir ANTES de abrir o container, porque
+    a chave do container muda de nome quando o edital e urgente (e o
+    que aciona a borda de destaque em _aplicar_estilo_dos_cards).
+    """
     prazo = datetime.fromisoformat(edital["data_encerramento_proposta"])
     urgente = _eh_urgente(prazo)
     sufixo_chave = "_urgente" if urgente else ""
 
     with st.container(border=True, key=f"card_{edital['numero_controle_pncp']}{sufixo_chave}", gap=None):
-        st.markdown(
-            f'<div style="font-family:\'Newsreader\',serif; font-size:1.15rem; '
-            f'font-weight:600; color:{COR_INK};">{edital["orgao"]}</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            f'<div style="margin-top:12px;">{_renderizar_badges(edital, urgente)}</div>',
-            unsafe_allow_html=True,
-        )
-
-        visto_em = datetime.fromisoformat(edital["visto_em"])
-        st.markdown(
-            f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.7rem; '
-            f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.7; '
-            f'margin-top:14px;">{edital["modalidade"]} · {edital["municipio"]}/{edital["uf"]} · '
-            f'encerra {prazo:%d/%m/%Y} · {_formatar_valor_reais(edital["valor_estimado"])}</div>'
-            f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
-            f'color:{COR_INK}; opacity:0.5; margin-top:4px;">'
-            f'Captado em {visto_em:%d/%m/%Y às %H:%M}</div>',
-            unsafe_allow_html=True,
-        )
+        _renderizar_identidade_do_card(edital, urgente)
+        _renderizar_metadados_do_card(edital, prazo)
 
         todos_os_termos = [termo for match in edital["segmentos"] for termo in match["termos"]]
-        objeto_resumido = edital["objeto"][:220] + ("…" if len(edital["objeto"]) > 220 else "")
-        st.markdown(
-            f'<div style="margin:12px 0 16px 0;">{_destacar_termos(objeto_resumido, todos_os_termos, min_radical)}</div>',
-            unsafe_allow_html=True,
-        )
-
-        # on_change="rerun" + .open e o que permite pular a consulta ao
-        # banco (carregar_itens) enquanto o expander estiver fechado. Sem
-        # isso, por padrao o Streamlit executa o conteudo do expander
-        # mesmo fechado, e a gente ia buscar item de TODO card da pagina
-        # toda vez, nao so do que o usuario realmente abriu.
-        detalhes = st.expander(
-            "Ver mais detalhes", on_change="rerun", key=f"detalhes_{edital['numero_controle_pncp']}"
-        )
-        with detalhes:
-            st.markdown(_destacar_termos(edital["objeto"], todos_os_termos, min_radical), unsafe_allow_html=True)
-            st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
-
-            if detalhes.open:
-                itens = carregar_itens(edital["numero_controle_pncp"])
-                _renderizar_itens(itens, todos_os_termos, min_radical)
-
-                st.markdown(
-                    f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
-                    f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.6; '
-                    f'margin-top:16px; margin-bottom:6px;">Documentos</div>',
-                    unsafe_allow_html=True,
-                )
-                documentos = carregar_arquivos(edital["link_pncp"])
-                _renderizar_documentos(documentos)
+        _renderizar_resumo_do_objeto(edital, todos_os_termos, min_radical)
+        _renderizar_detalhes_do_card(edital, todos_os_termos, min_radical)
 
 
 def _paginar(lista, itens_por_pagina):

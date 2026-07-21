@@ -10,7 +10,7 @@ Bruno (dono do projeto) é iniciante em programação e fundador da NexLicit. Pr
 - Entregar uma coisa por vez (um arquivo ou uma função), esperar o Bruno rodar e confirmar entendimento antes de continuar.
 - Perguntar quando faltar informação, nunca inventar ou assumir.
 - Código simples e legível em vez de compacto/esperto ("sem código mágico").
-- Identificadores de código em inglês; comentários e docstrings em português.
+- Identificadores de código (funções, variáveis, campos de banco/dataclass) em português, inclusive termos do domínio (numero_controle_pncp, orgao, municipio, banco, captura, entrega). Comentários e docstrings também em português.
 - Nunca alucinar comportamento de API ou biblioteca: confirmar com documentação real ou chamada de teste real antes de afirmar algo. Já aconteceu de verdade neste projeto (situacaoCompraId vindo como número e não string; endpoint de itens/arquivos não documentado no Swagger oficial, só existe testando; limite do AppTest do Streamlit pra simular clique).
 - Trabalhar por camada/etapa, não começar a próxima sem aprovação explícita.
 - Nunca usar travessão (em-dash) em nenhum texto escrito pro Bruno (commits, mensagens, README): usar ponto ou vírgula.

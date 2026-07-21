@@ -23,6 +23,15 @@ TAMANHO_PAGINA = 50  # confirmado no Swagger: esse e o maximo permitido pela API
 TIMEOUT_SEGUNDOS = 30
 MAX_TENTATIVAS = 3
 
+# Pausa entre uma chamada e outra pra API do PNCP (entre municipios em
+# main.py, entre editais em scripts/backfill_itens.py). Descobrimos
+# rodando de verdade que bater a API em sequencia, sem pausa nenhuma,
+# gera bastante erro 429 (limite de requisicoes), mesmo o limite nao
+# sendo documentado em lugar nenhum. Essa pausa e uma prevencao, nao uma
+# garantia. Fica aqui (nao em cada script separado) pra quem muda esse
+# numero mudar um lugar so.
+PAUSA_ENTRE_CHAMADAS_SEGUNDOS = 1.5
+
 # Confirmado em chamada real (Tarefa 1.0): 1 e o codigo de situacao que
 # corresponde a "Divulgada no PNCP", ou seja, um edital de verdade em aberto.
 # Nao confiamos so no fato de o endpoint se chamar "proposta em aberto":

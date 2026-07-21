@@ -2,6 +2,11 @@
 # Isso cobre cor e fonte GLOBAL do app. Coisas de estilo pontual (cor de
 # fundo do card, o rotulo "eyebrow" monoespacado) sao feitas com HTML/CSS
 # customizado direto onde aparecem (painel/app.py), nao aqui.
+#
+# As 4 cores abaixo (brass, paper, paper-deep, ink) tambem existem
+# copiadas em painel/app.py (COR_BRASS, COR_PAPER, COR_CARD, COR_INK),
+# porque o CSS customizado de la nao consegue ler o tema daqui. Mudou
+# uma cor aqui, mudar a mesma la tambem.
 
 [theme]
 # brass: cor de destaque, links, elementos interativos

@@ -2,7 +2,7 @@
 Ponto de entrada do Radar NexLicit. Junta captura (pncp_client) + filtro
 de palavra-chave (filtro.py), itera pelos municipios ativos do
 config/municipios.csv, busca os itens (e o selo ME/EPP) dos editais que
-bateram, e salva o resultado em dados/.
+bateram, e salva o resultado no banco (dados/radar.db).
 
 Como rodar (com o venv ativado):
     python main.py --dias 7
@@ -17,12 +17,9 @@ Como rodar (com o venv ativado):
 
 import argparse
 import csv
-import json
 import logging
 import time
-from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 
 from captura import banco, filtro, pncp_client
 from captura.apresentacao import formatar_selo_me_epp, formatar_status, formatar_valor
@@ -33,13 +30,6 @@ logger = logging.getLogger("main")
 
 CAMINHO_MUNICIPIOS = "config/municipios.csv"
 CAMINHO_KEYWORDS = "config/keywords.yaml"
-PASTA_DADOS = Path("dados")
-
-# Pausa entre um municipio e outro. Descobrimos rodando de verdade que
-# bater a API 142 vezes em sequencia, sem pausa nenhuma, gera bastante
-# erro 429 (limite de requisicoes), mesmo o limite nao sendo documentado
-# em lugar nenhum. Essa pausa e uma prevencao, nao uma garantia.
-PAUSA_ENTRE_MUNICIPIOS_SEGUNDOS = 1.5
 
 
 def configurar_logging():
@@ -77,7 +67,7 @@ def capturar_editais(municipios, dias):
 
     for indice, municipio in enumerate(municipios):
         if indice > 0:
-            time.sleep(PAUSA_ENTRE_MUNICIPIOS_SEGUNDOS)
+            time.sleep(pncp_client.PAUSA_ENTRE_CHAMADAS_SEGUNDOS)
 
         try:
             editais_do_municipio = pncp_client.buscar_contratacoes_com_proposta_aberta(
@@ -191,49 +181,6 @@ def imprimir_resumo(editais_classificados):
         print()
 
 
-def salvar_resultados(editais_classificados):
-    PASTA_DADOS.mkdir(exist_ok=True)
-    agora = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    caminho_json = PASTA_DADOS / f"editais_{agora}.json"
-    with open(caminho_json, "w", encoding="utf-8") as arquivo:
-        json.dump(
-            [{**asdict(edital), "status": status} for edital, status, _linha in editais_classificados],
-            arquivo, ensure_ascii=False, indent=2, default=str,
-        )
-
-    caminho_csv = PASTA_DADOS / f"editais_{agora}.csv"
-    campos_do_csv = [
-        "status", "numero_controle_pncp", "orgao", "municipio", "uf", "modalidade",
-        "objeto", "valor_estimado", "data_encerramento_proposta",
-        "segmentos", "selo_me_epp", "link_pncp",
-    ]
-    with open(caminho_csv, "w", newline="", encoding="utf-8") as arquivo:
-        escritor = csv.DictWriter(arquivo, fieldnames=campos_do_csv)
-        escritor.writeheader()
-
-        for edital, status, _linha in editais_classificados:
-            segmentos_texto = "; ".join(
-                f"{match['segmento']} ({', '.join(match['termos'])})" for match in edital.segmentos
-            )
-            escritor.writerow({
-                "status": status,
-                "numero_controle_pncp": edital.numero_controle_pncp,
-                "orgao": edital.orgao,
-                "municipio": edital.municipio,
-                "uf": edital.uf,
-                "modalidade": edital.modalidade,
-                "objeto": edital.objeto,
-                "valor_estimado": edital.valor_estimado,
-                "data_encerramento_proposta": edital.data_encerramento_proposta,
-                "segmentos": segmentos_texto,
-                "selo_me_epp": formatar_selo_me_epp(edital.beneficios_itens) or "",
-                "link_pncp": edital.link_pncp,
-            })
-
-    logger.info("Salvo em %s e %s", caminho_json, caminho_csv)
-
-
 def filtrar_historico(linhas, municipio=None, segmento=None):
     """Filtra as linhas que banco.consultar_historico devolveu, por
     municipio e/ou segmento. Comparacao normalizada (sem acento/maiuscula),
@@ -282,7 +229,7 @@ def main():
     parser.add_argument("--dias", type=int, default=90, help="quantos dias a frente olhar (default: 90)")
     parser.add_argument("--municipio", help="filtra so por este municipio")
     parser.add_argument("--segmento", help="filtra so por este segmento")
-    parser.add_argument("--dry-run", action="store_true", help="nao salva nada (nem arquivo, nem banco), so mostra na tela")
+    parser.add_argument("--dry-run", action="store_true", help="nao salva nada no banco, so mostra na tela")
     parser.add_argument(
         "--incluir-vistos", action="store_true",
         help="mostra tambem os editais ja vistos sem mudanca, nao so os novos/atualizados",
@@ -345,7 +292,6 @@ def main():
     if not argumentos.dry_run and editais_classificados:
         banco.salvar(conexao_banco, editais_classificados)
         salvar_itens_dos_editais(conexao_banco, editais_classificados)
-        salvar_resultados(editais_classificados)
 
     if argumentos.enviar_email and not argumentos.dry_run:
         # so entra no e-mail quem e novo/atualizado, mesmo que --incluir-vistos

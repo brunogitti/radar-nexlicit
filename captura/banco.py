@@ -296,7 +296,7 @@ def salvar_itens(conexao, numero_controle_pncp, itens):
     conexao.commit()
 
 
-def buscar_itens_do_edital(conexao, numero_controle_pncp):
+def consultar_itens_do_edital(conexao, numero_controle_pncp):
     """Le os itens ja salvos de um edital especifico, do item 1 em diante.
 
     Usada pelo painel (Tarefa A.4) so quando o usuario abre os detalhes

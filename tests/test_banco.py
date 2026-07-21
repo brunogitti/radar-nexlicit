@@ -151,9 +151,9 @@ def test_historico_com_dias_ignora_edital_antigo(tmp_path):
     assert numeros_no_historico == {"22222222222222-1-000002/2026"}
 
 
-def test_buscar_itens_de_edital_sem_itens_devolve_lista_vazia(tmp_path):
+def test_consultar_itens_de_edital_sem_itens_devolve_lista_vazia(tmp_path):
     conexao = _banco_de_teste(tmp_path)
-    assert banco.buscar_itens_do_edital(conexao, "00000000000000-1-000001/2026") == []
+    assert banco.consultar_itens_do_edital(conexao, "00000000000000-1-000001/2026") == []
 
 
 def test_salvar_itens_grava_e_devolve_em_ordem(tmp_path):
@@ -165,7 +165,7 @@ def test_salvar_itens_grava_e_devolve_em_ordem(tmp_path):
         _item_de_teste(numero_item=1, descricao="Primeiro item"),
     ])
 
-    itens = banco.buscar_itens_do_edital(conexao, numero_controle)
+    itens = banco.consultar_itens_do_edital(conexao, numero_controle)
 
     assert [item["numero_item"] for item in itens] == [1, 2]
     assert itens[0]["descricao"] == "Primeiro item"
@@ -178,8 +178,8 @@ def test_salvar_itens_de_um_edital_nao_aparece_no_de_outro(tmp_path):
     banco.salvar_itens(conexao, "11111111111111-1-000001/2026", [_item_de_teste()])
     banco.salvar_itens(conexao, "22222222222222-1-000002/2026", [_item_de_teste(), _item_de_teste(numero_item=2)])
 
-    assert len(banco.buscar_itens_do_edital(conexao, "11111111111111-1-000001/2026")) == 1
-    assert len(banco.buscar_itens_do_edital(conexao, "22222222222222-1-000002/2026")) == 2
+    assert len(banco.consultar_itens_do_edital(conexao, "11111111111111-1-000001/2026")) == 1
+    assert len(banco.consultar_itens_do_edital(conexao, "22222222222222-1-000002/2026")) == 2
 
 
 def test_salvar_itens_duas_vezes_atualiza_em_vez_de_duplicar(tmp_path):
@@ -189,7 +189,7 @@ def test_salvar_itens_duas_vezes_atualiza_em_vez_de_duplicar(tmp_path):
     banco.salvar_itens(conexao, numero_controle, [_item_de_teste(descricao="Descricao antiga")])
     banco.salvar_itens(conexao, numero_controle, [_item_de_teste(descricao="Descricao corrigida")])
 
-    itens = banco.buscar_itens_do_edital(conexao, numero_controle)
+    itens = banco.consultar_itens_do_edital(conexao, numero_controle)
 
     assert len(itens) == 1
     assert itens[0]["descricao"] == "Descricao corrigida"
