@@ -1,8 +1,8 @@
 """
 Ponto de entrada do Radar NexLicit. Junta captura (pncp_client) + filtro
 de palavra-chave (filtro.py), itera pelos municipios ativos do
-config/municipios.csv, busca o selo ME/EPP dos editais que bateram, e
-salva o resultado em dados/.
+config/municipios.csv, busca os itens (e o selo ME/EPP) dos editais que
+bateram, e salva o resultado em dados/.
 
 Como rodar (com o venv ativado):
     python main.py --dias 7
@@ -140,15 +140,33 @@ def testar_termo(termo, editais, config):
     ]
 
 
-def buscar_selo_me_epp(editais):
+def buscar_itens_dos_editais(editais):
     """So chama o endpoint de itens (mais lento, um por edital) para os
-    editais que ja passaram no filtro de palavra-chave.
+    editais que ja passaram no filtro de palavra-chave. Uma chamada so por
+    edital alimenta duas coisas: a lista completa de itens (edital.itens,
+    salva em itens_edital pela Tarefa A.2) e o selo ME/EPP de sempre
+    (edital.beneficios_itens, formato inalterado desde a Tarefa 1.6).
     """
     for edital in editais:
-        edital.beneficios_itens = pncp_client.buscar_beneficios_da_compra(
+        itens = pncp_client.buscar_itens_da_compra(
             edital.cnpj_orgao, edital.ano_compra, edital.sequencial_compra
         )
+        edital.itens = itens
+        edital.beneficios_itens = (
+            [item["tipo_beneficio"] for item in itens] if itens is not None else None
+        )
     return editais
+
+
+def salvar_itens_dos_editais(conexao, editais_classificados):
+    """Grava os itens de cada edital classificado (Tarefa A.2), junto do
+    resto. edital.itens fica None quando a busca em buscar_itens_dos_editais
+    falhou (rede, PNCP fora do ar); nesse caso nao ha nada pra salvar pra
+    esse edital especifico, os outros seguem normalmente.
+    """
+    for edital, _status, _linha in editais_classificados:
+        if edital.itens is not None:
+            banco.salvar_itens(conexao, edital.numero_controle_pncp, edital.itens)
 
 
 def imprimir_resumo(editais_classificados):
@@ -314,7 +332,7 @@ def main():
     editais_filtrados = aplicar_filtro_de_palavras_chave(editais_brutos, config_keywords, argumentos.segmento)
     logger.info("%s edital(is) bateram no filtro de palavra-chave", len(editais_filtrados))
 
-    editais_filtrados = buscar_selo_me_epp(editais_filtrados)
+    editais_filtrados = buscar_itens_dos_editais(editais_filtrados)
 
     conexao_banco = banco.conectar()
     editais_classificados = banco.classificar(conexao_banco, editais_filtrados)
@@ -326,6 +344,7 @@ def main():
 
     if not argumentos.dry_run and editais_classificados:
         banco.salvar(conexao_banco, editais_classificados)
+        salvar_itens_dos_editais(conexao_banco, editais_classificados)
         salvar_resultados(editais_classificados)
 
     if argumentos.enviar_email and not argumentos.dry_run:

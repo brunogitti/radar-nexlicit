@@ -157,10 +157,11 @@ def buscar_contratacoes_com_proposta_aberta(codigo_municipio_ibge, dias_janela=9
     return editais
 
 
-def buscar_beneficios_da_compra(cnpj, ano, sequencial):
-    """Busca os itens de uma compra especifica e devolve a lista de textos
-    de beneficio encontrados (ex.: ["Sem beneficio"], ou algo diferente
-    quando existe algum tipo de tratamento favorecido).
+def buscar_itens_da_compra(cnpj, ano, sequencial):
+    """Busca os itens de uma compra especifica e devolve a lista deles, um
+    dicionario por item ja no formato que captura/banco.salvar_itens espera
+    (numero_item, descricao, material_ou_servico, quantidade,
+    valor_unitario_estimado, valor_total, tipo_beneficio).
 
     Essa chamada e feita edital por edital (nao existe outro jeito, o dado
     so mora aqui), entao so vale a pena chamar depois que o edital ja passou
@@ -169,7 +170,8 @@ def buscar_beneficios_da_compra(cnpj, ano, sequencial):
     Tratamento de erro proprio: se essa chamada falhar (rede, timeout,
     servidor fora do ar), NAO derruba a execucao inteira. So registra um
     aviso no log e devolve None, e quem chamou entende None como "nao foi
-    possivel verificar o beneficio deste edital".
+    possivel buscar os itens deste edital" (usado tanto pro selo ME/EPP
+    quanto pra lista completa de itens, Tarefa A.2).
     """
     identificador = f"{cnpj}/{ano}/{sequencial}"
     url = URL_ITENS_DA_COMPRA.format(cnpj=cnpj, ano=ano, sequencial=sequencial)
@@ -178,11 +180,21 @@ def buscar_beneficios_da_compra(cnpj, ano, sequencial):
         resposta = _fazer_requisicao(url, params=None)
     except (RuntimeError, requests.exceptions.HTTPError) as erro:
         logger.warning(
-            "Nao consegui verificar o beneficio do edital %s, vai ficar como "
-            "'nao verificado': %s",
+            "Nao consegui buscar os itens do edital %s, vai ficar sem itens salvos: %s",
             identificador, erro,
         )
         return None
 
-    itens = resposta.json()
-    return [item.get("tipoBeneficioNome") for item in itens]
+    itens_crus = resposta.json()
+    return [
+        {
+            "numero_item": item["numeroItem"],
+            "descricao": item.get("descricao"),
+            "material_ou_servico": item.get("materialOuServicoNome"),
+            "quantidade": item.get("quantidade"),
+            "valor_unitario_estimado": item.get("valorUnitarioEstimado"),
+            "valor_total": item.get("valorTotal"),
+            "tipo_beneficio": item.get("tipoBeneficioNome"),
+        }
+        for item in itens_crus
+    ]

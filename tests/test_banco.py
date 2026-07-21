@@ -34,6 +34,18 @@ def _banco_de_teste(tmp_path):
     return banco.conectar(str(tmp_path / "teste.db"))
 
 
+def _item_de_teste(numero_item=1, descricao="Material de limpeza diverso"):
+    return {
+        "numero_item": numero_item,
+        "descricao": descricao,
+        "material_ou_servico": "Material",
+        "quantidade": 10.0,
+        "valor_unitario_estimado": 25.5,
+        "valor_total": 255.0,
+        "tipo_beneficio": "Sem benefício",
+    }
+
+
 def test_edital_nunca_visto_e_classificado_como_novo(tmp_path):
     conexao = _banco_de_teste(tmp_path)
     edital = _edital_de_teste()
@@ -137,3 +149,47 @@ def test_historico_com_dias_ignora_edital_antigo(tmp_path):
 
     numeros_no_historico = {linha["numero_controle_pncp"] for linha in historico_90_dias}
     assert numeros_no_historico == {"22222222222222-1-000002/2026"}
+
+
+def test_buscar_itens_de_edital_sem_itens_devolve_lista_vazia(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    assert banco.buscar_itens_do_edital(conexao, "00000000000000-1-000001/2026") == []
+
+
+def test_salvar_itens_grava_e_devolve_em_ordem(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    numero_controle = "00000000000000-1-000001/2026"
+
+    banco.salvar_itens(conexao, numero_controle, [
+        _item_de_teste(numero_item=2, descricao="Segundo item"),
+        _item_de_teste(numero_item=1, descricao="Primeiro item"),
+    ])
+
+    itens = banco.buscar_itens_do_edital(conexao, numero_controle)
+
+    assert [item["numero_item"] for item in itens] == [1, 2]
+    assert itens[0]["descricao"] == "Primeiro item"
+    assert itens[0]["valor_total"] == 255.0
+
+
+def test_salvar_itens_de_um_edital_nao_aparece_no_de_outro(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    banco.salvar_itens(conexao, "11111111111111-1-000001/2026", [_item_de_teste()])
+    banco.salvar_itens(conexao, "22222222222222-1-000002/2026", [_item_de_teste(), _item_de_teste(numero_item=2)])
+
+    assert len(banco.buscar_itens_do_edital(conexao, "11111111111111-1-000001/2026")) == 1
+    assert len(banco.buscar_itens_do_edital(conexao, "22222222222222-1-000002/2026")) == 2
+
+
+def test_salvar_itens_duas_vezes_atualiza_em_vez_de_duplicar(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    numero_controle = "00000000000000-1-000001/2026"
+
+    banco.salvar_itens(conexao, numero_controle, [_item_de_teste(descricao="Descricao antiga")])
+    banco.salvar_itens(conexao, numero_controle, [_item_de_teste(descricao="Descricao corrigida")])
+
+    itens = banco.buscar_itens_do_edital(conexao, numero_controle)
+
+    assert len(itens) == 1
+    assert itens[0]["descricao"] == "Descricao corrigida"

@@ -19,7 +19,7 @@ class Edital:
     numero_controle_pncp: str
 
     # Guardados separados (em vez de so dentro de numero_controle_pncp)
-    # porque buscar_beneficios_da_compra (pncp_client.py) precisa dos tres
+    # porque buscar_itens_da_compra (pncp_client.py) precisa dos tres
     # na hora de montar a URL do endpoint de itens. Tentar extrair de volta
     # a partir do texto do numero_controle_pncp seria fragil.
     cnpj_orgao: str
@@ -54,6 +54,13 @@ class Edital:
     # ME/EPP"]). A decisao de como transformar isso num selo na tela fica
     # pra Tarefa 1.6, com o Bruno.
     beneficios_itens: list | None = None
+
+    # Lista completa dos itens da compra (descricao, quantidade, valores,
+    # etc.), no formato que captura/banco.salvar_itens espera. Vem da MESMA
+    # chamada que preenche beneficios_itens acima (Tarefa A.2 da Camada 4,
+    # entrega 2), None significa "ainda nao buscamos" ou "a busca falhou",
+    # igual beneficios_itens.
+    itens: list | None = None
 
     # field(default_factory=list) existe porque uma lista e um valor
     # "mutavel": se eu escrevesse "segmentos: list = []" direto, todo Edital

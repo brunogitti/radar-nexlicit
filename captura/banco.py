@@ -79,6 +79,48 @@ ON CONFLICT(numero_controle_pncp) DO UPDATE SET
 # Reparem que visto_em NAO esta no SET: ele so e gravado na insercao,
 # nunca sobrescrito, entao a data da "primeira vez que vimos" fica fixa.
 
+# Tabela filha de editais (um edital tem varios itens). A chave e composta
+# (numero_controle_pncp + numero_item) porque numero_item so e unico DENTRO
+# de um edital, dois editais diferentes podem ter os dois um "item 1".
+# FOREIGN KEY aqui e so documentacao da relacao: o SQLite nao chega a
+# impedir uma linha orfa por causa disso (precisaria de
+# "PRAGMA foreign_keys = ON", que este projeto nunca ligou), mas como hoje
+# nao existe nenhum caminho que apague um edital, isso nao e um risco real.
+CRIAR_TABELA_ITENS_SQL = """
+CREATE TABLE IF NOT EXISTS itens_edital (
+    numero_controle_pncp TEXT NOT NULL,
+    numero_item INTEGER NOT NULL,
+    descricao TEXT,
+    material_ou_servico TEXT,
+    quantidade REAL,
+    valor_unitario_estimado REAL,
+    valor_total REAL,
+    tipo_beneficio TEXT,
+    PRIMARY KEY (numero_controle_pncp, numero_item),
+    FOREIGN KEY (numero_controle_pncp) REFERENCES editais(numero_controle_pncp)
+)
+"""
+
+SQL_UPSERT_ITEM = """
+INSERT INTO itens_edital (
+    numero_controle_pncp, numero_item, descricao, material_ou_servico,
+    quantidade, valor_unitario_estimado, valor_total, tipo_beneficio
+) VALUES (
+    :numero_controle_pncp, :numero_item, :descricao, :material_ou_servico,
+    :quantidade, :valor_unitario_estimado, :valor_total, :tipo_beneficio
+)
+ON CONFLICT(numero_controle_pncp, numero_item) DO UPDATE SET
+    descricao = excluded.descricao,
+    material_ou_servico = excluded.material_ou_servico,
+    quantidade = excluded.quantidade,
+    valor_unitario_estimado = excluded.valor_unitario_estimado,
+    valor_total = excluded.valor_total,
+    tipo_beneficio = excluded.tipo_beneficio
+"""
+# Upsert pela chave composta: rodar isso de novo pro mesmo edital so
+# atualiza as mesmas linhas, nunca duplica. E o que deixa o script de
+# backfill (Tarefa A.3) seguro de rodar mais de uma vez.
+
 
 def conectar(caminho=CAMINHO_BANCO_PADRAO):
     """Abre a conexao com o banco (cria o arquivo se nao existir ainda) e
@@ -94,6 +136,7 @@ def conectar(caminho=CAMINHO_BANCO_PADRAO):
     conexao = sqlite3.connect(caminho)
     conexao.row_factory = sqlite3.Row
     conexao.execute(CRIAR_TABELA_SQL)
+    conexao.execute(CRIAR_TABELA_ITENS_SQL)
     conexao.commit()
     return conexao
 
@@ -225,3 +268,44 @@ def atualizar_segmentos(conexao, numero_controle_pncp, novos_segmentos):
         (json.dumps(novos_segmentos, ensure_ascii=False), datetime.now().isoformat(), numero_controle_pncp),
     )
     conexao.commit()
+
+
+def salvar_itens(conexao, numero_controle_pncp, itens):
+    """Grava (insere ou atualiza) a lista de itens de um edital especifico.
+    Cada item e um dicionario com as chaves numero_item, descricao,
+    material_ou_servico, quantidade, valor_unitario_estimado, valor_total
+    e tipo_beneficio (e o formato que pncp_client.buscar_itens_da_compra
+    devolve, ver Tarefa A.2).
+
+    Usada tanto na captura diaria quanto no script de backfill
+    (scripts/backfill_itens.py, Tarefa A.3): como a chave e composta
+    (numero_controle_pncp + numero_item), rodar isso de novo pro mesmo
+    edital so atualiza as linhas que ja existiam, nunca duplica.
+    """
+    for item in itens:
+        conexao.execute(SQL_UPSERT_ITEM, {
+            "numero_controle_pncp": numero_controle_pncp,
+            "numero_item": item["numero_item"],
+            "descricao": item.get("descricao"),
+            "material_ou_servico": item.get("material_ou_servico"),
+            "quantidade": item.get("quantidade"),
+            "valor_unitario_estimado": item.get("valor_unitario_estimado"),
+            "valor_total": item.get("valor_total"),
+            "tipo_beneficio": item.get("tipo_beneficio"),
+        })
+    conexao.commit()
+
+
+def buscar_itens_do_edital(conexao, numero_controle_pncp):
+    """Le os itens ja salvos de um edital especifico, do item 1 em diante.
+
+    Usada pelo painel (Tarefa A.4) so quando o usuario abre os detalhes
+    de UM edital especifico, nunca busca os itens de todos os editais de
+    uma vez (por isso essa funcao pede um numero_controle_pncp, diferente
+    de consultar_historico que devolve tudo).
+    """
+    cursor = conexao.execute(
+        "SELECT * FROM itens_edital WHERE numero_controle_pncp = ? ORDER BY numero_item",
+        (numero_controle_pncp,),
+    )
+    return [dict(linha) for linha in cursor.fetchall()]

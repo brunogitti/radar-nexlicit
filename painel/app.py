@@ -86,6 +86,19 @@ def carregar_editais():
 
 
 @st.cache_data(ttl=60)
+def carregar_itens(numero_controle_pncp):
+    """Le os itens de UM edital especifico (Tarefa A.4). So e chamada
+    quando o usuario abre de verdade o "ver mais detalhes" daquele card
+    (ver on_change="rerun" e .open em _renderizar_card), nunca para todos
+    os editais de uma vez, por isso não está junto de carregar_editais.
+    """
+    conexao = banco.conectar()
+    itens = banco.buscar_itens_do_edital(conexao, numero_controle_pncp)
+    conexao.close()
+    return itens
+
+
+@st.cache_data(ttl=60)
 def carregar_min_radical():
     """Le o min_radical do keywords.yaml, pra o destaque das palavras no
     objeto usar a MESMA regra de prefixo/palavra-inteira que o filtro.py
@@ -353,6 +366,84 @@ def _renderizar_badges(edital, urgente):
     return "".join(pedacos)
 
 
+def _formatar_quantidade(valor):
+    if valor is None:
+        return "—"
+    return f"{valor:g}"
+
+
+def _remover_duplicacao_exata(texto):
+    """So pra EXIBICAO: alguns editais no PNCP tem a descricao do item
+    colada duas vezes por engano na hora do cadastro (confirmado direto
+    na API, nao e bug nosso, ver o caso do edital de Fernandopolis).
+    Nunca altera o que fica salvo no banco, so o que aparece na tela.
+
+    Se o texto, cortado bem no meio, tiver as duas metades identicas
+    (com ou sem um espaco separando elas), mostra so a primeira metade.
+    E um teste bem especifico de proposito: um texto normal ter a
+    primeira metade igual, caractere por caractere, a segunda metade
+    inteira e praticamente impossivel por acaso, entao isso nunca deve
+    cortar uma descricao legitima.
+    """
+    metade = len(texto) // 2
+
+    if len(texto) % 2 == 1 and texto[metade] == " ":
+        primeira, segunda = texto[:metade], texto[metade + 1:]
+    else:
+        primeira, segunda = texto[:metade], texto[metade:]
+
+    return primeira if primeira and primeira == segunda else texto
+
+
+def _renderizar_itens(itens, termos, min_radical):
+    """Tabela com os itens do edital, com a descricao destacada pelas
+    mesmas palavras-chave que fizeram esse edital bater no segmento.
+    Tem que ser HTML nosso (nao st.dataframe/st.table): essas duas
+    escapam qualquer tag dentro da celula, entao o <mark> do destaque
+    apareceria como texto cru em vez de destacar de verdade.
+    """
+    if not itens:
+        st.caption("Nenhum item detalhado disponível para este edital ainda.")
+        return
+
+    linhas_html = []
+    for item in itens:
+        descricao = _remover_duplicacao_exata((item["descricao"] or "").strip())
+        descricao_destacada = _destacar_termos(descricao, termos, min_radical)
+        linhas_html.append(
+            f'<tr>'
+            f'<td style="padding:6px 10px; border-bottom:1px solid {COR_BRASS}33;">{descricao_destacada}</td>'
+            f'<td style="padding:6px 10px; border-bottom:1px solid {COR_BRASS}33; text-align:right; '
+            f'white-space:nowrap;">{_formatar_quantidade(item["quantidade"])}</td>'
+            f'<td style="padding:6px 10px; border-bottom:1px solid {COR_BRASS}33; text-align:right; '
+            f'white-space:nowrap;">{_formatar_valor_reais(item["valor_unitario_estimado"])}</td>'
+            f'<td style="padding:6px 10px; border-bottom:1px solid {COR_BRASS}33; text-align:right; '
+            f'white-space:nowrap;">{_formatar_valor_reais(item["valor_total"])}</td>'
+            f'</tr>'
+        )
+
+    st.markdown(
+        f"""
+        <table style="width:100%; border-collapse:collapse; font-family:'IBM Plex Sans',sans-serif;
+                       font-size:0.85rem; margin-top:12px;">
+            <thead>
+                <tr style="color:{COR_INK}; opacity:0.6; font-family:'IBM Plex Mono',monospace;
+                           font-size:0.65rem; letter-spacing:0.06em; text-transform:uppercase;">
+                    <th style="text-align:left; padding:4px 10px;">Descrição</th>
+                    <th style="text-align:right; padding:4px 10px;">Qtd.</th>
+                    <th style="text-align:right; padding:4px 10px;">Valor unit.</th>
+                    <th style="text-align:right; padding:4px 10px;">Valor total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {"".join(linhas_html)}
+            </tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _renderizar_card(edital, min_radical):
     # gap=None tira o espacamento automatico que o Streamlit poe entre
     # cada st.markdown aqui dentro. Sem isso, o respiro real de cada
@@ -403,9 +494,21 @@ def _renderizar_card(edital, min_radical):
             unsafe_allow_html=True,
         )
 
-        with st.expander("Ver mais detalhes"):
+        # on_change="rerun" + .open e o que permite pular a consulta ao
+        # banco (carregar_itens) enquanto o expander estiver fechado. Sem
+        # isso, por padrao o Streamlit executa o conteudo do expander
+        # mesmo fechado, e a gente ia buscar item de TODO card da pagina
+        # toda vez, nao so do que o usuario realmente abriu.
+        detalhes = st.expander(
+            "Ver mais detalhes", on_change="rerun", key=f"detalhes_{edital['numero_controle_pncp']}"
+        )
+        with detalhes:
             st.markdown(_destacar_termos(edital["objeto"], todos_os_termos, min_radical), unsafe_allow_html=True)
             st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
+
+            if detalhes.open:
+                itens = carregar_itens(edital["numero_controle_pncp"])
+                _renderizar_itens(itens, todos_os_termos, min_radical)
 
 
 def _paginar(lista, itens_por_pagina):
