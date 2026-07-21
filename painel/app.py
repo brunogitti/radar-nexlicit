@@ -625,35 +625,46 @@ def _renderizar_resumo_do_objeto(edital, todos_os_termos, min_radical):
 
 
 def _renderizar_detalhes_do_card(edital, todos_os_termos, min_radical):
-    """Conteudo do "ver mais detalhes": objeto completo, link pro PNCP,
-    tabela de itens e botoes de documento.
+    """Conteudo do "ver mais detalhes", em 3 abas (Objeto, Itens,
+    Documentos). Antes (Etapa 2) os 4 tipos de conteudo (objeto
+    completo, link, tabela de itens, botoes de documento) ficavam todos
+    empilhados sem separacao, um em cima do outro (Etapa 3, item 3).
 
-    on_change="rerun" + .open e o que permite pular a consulta ao banco
-    (carregar_itens) e a chamada ao vivo na API (carregar_arquivos)
-    enquanto o expander estiver fechado. Sem isso, por padrao o
-    Streamlit executa o conteudo do expander mesmo fechado, e a gente ia
-    buscar item/documento de TODO card da pagina toda vez, nao so do
-    que o usuario realmente abriu.
+    Testado isolado antes de aplicar aqui: aba dentro de expander e uma
+    combinacao com relato de problema na comunidade do Streamlit quando
+    os dois rastreiam estado ao mesmo tempo. Por isso as abas ficam no
+    modo padrao (sem on_change proprio, sem rastrear qual aba esta
+    selecionada): quem continua controlando o carregamento preguicoso e
+    so o expander de fora, do jeito que ja funcionava.
+
+    on_change="rerun" + .open no expander e o que permite pular a
+    consulta ao banco (carregar_itens) e a chamada ao vivo na API
+    (carregar_arquivos) enquanto ele estiver fechado. Sem isso, por
+    padrao o Streamlit executa o conteudo do expander mesmo fechado, e
+    a gente ia buscar item/documento de TODO card da pagina toda vez,
+    nao so do que o usuario realmente abriu.
     """
     detalhes = st.expander(
         "Ver mais detalhes", on_change="rerun", key=f"detalhes_{edital['numero_controle_pncp']}"
     )
     with detalhes:
-        st.markdown(_destacar_termos(edital["objeto"], todos_os_termos, min_radical), unsafe_allow_html=True)
-        st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
-
         if detalhes.open:
-            itens = carregar_itens(edital["numero_controle_pncp"])
-            _renderizar_itens(itens, todos_os_termos, min_radical)
+            aba_objeto, aba_itens, aba_documentos = st.tabs(["Objeto", "Itens", "Documentos"])
 
-            st.markdown(
-                f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
-                f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.6; '
-                f'margin-top:16px; margin-bottom:6px;">Documentos</div>',
-                unsafe_allow_html=True,
-            )
-            documentos = carregar_arquivos(edital["link_pncp"])
-            _renderizar_documentos(documentos)
+            with aba_objeto:
+                st.markdown(
+                    _destacar_termos(edital["objeto"], todos_os_termos, min_radical),
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"[Ver no PNCP]({edital['link_pncp']})")
+
+            with aba_itens:
+                itens = carregar_itens(edital["numero_controle_pncp"])
+                _renderizar_itens(itens, todos_os_termos, min_radical)
+
+            with aba_documentos:
+                documentos = carregar_arquivos(edital["link_pncp"])
+                _renderizar_documentos(documentos)
 
 
 def _renderizar_card(edital, min_radical):
