@@ -164,6 +164,50 @@ def _renderizar_cabecalho():
     )
 
 
+def _renderizar_resumo_executivo(editais):
+    """Tres numeros de leitura rapida, logo abaixo do cabecalho (Etapa 3,
+    item 4): quantos editais o banco tem no total, quantos estao com
+    vencimento proximo agora, e quantos foram captados hoje. Mesma
+    linguagem tipografica do resto do painel (numero grande em serifada,
+    rotulo pequeno em monoespacada), nao inventa cor nem fonte nova.
+
+    Os totais aqui NAO respeitam o filtro da sidebar de proposito: e uma
+    leitura do estado geral do banco, a contagem que ja respeita filtro
+    continua mais abaixo, junto da lista.
+    """
+    total = len(editais)
+    urgentes = sum(
+        1 for e in editais
+        if _eh_urgente(datetime.fromisoformat(e["data_encerramento_proposta"]))
+    )
+    hoje = date.today()
+    captados_hoje = sum(
+        1 for e in editais
+        if datetime.fromisoformat(e["visto_em"]).date() == hoje
+    )
+
+    tiles = [
+        (total, "Editais monitorados"),
+        (urgentes, "Vencimento em breve"),
+        (captados_hoje, "Captados hoje"),
+    ]
+    tiles_html = "".join(
+        f'<div style="flex:1; text-align:center;">'
+        f'<div style="font-family:\'Newsreader\',serif; font-size:2rem; font-weight:700; '
+        f'color:{COR_INK};">{valor}</div>'
+        f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; letter-spacing:0.06em; '
+        f'text-transform:uppercase; color:{COR_INK}; opacity:0.6; margin-top:2px;">{rotulo}</div>'
+        f'</div>'
+        for valor, rotulo in tiles
+    )
+
+    st.markdown(
+        f'<div style="display:flex; background-color:{COR_CARD}; border-radius:8px; '
+        f'padding:16px 8px; margin-bottom:20px;">{tiles_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _renderizar_rodape():
     """Rodape com o simbolo pequeno e o mesmo texto institucional do
     rodape do site, com link pra la. Uma linha bem fina e clara (nao um
@@ -203,7 +247,11 @@ def _montar_filtro_captacao(editais, hoje):
     Devolve (captacao_inicio, captacao_fim) ja combinados em datetime,
     prontos pro dict que montar_filtros devolve.
     """
-    st.sidebar.subheader("Leva de captação")
+    # "Leva de captacao" era o nome interno que usamos nas conversas de
+    # planejamento, mas nao e autoexplicativo pra quem nunca acompanhou
+    # o projeto (Etapa 3, item 6). "Data de captura" diz a mesma coisa
+    # de um jeito que um visitante novo entende de cara.
+    st.sidebar.subheader("Data de captura")
 
     # Igual ao slider de valor: o padrao cobre do mais antigo ao mais
     # novo que existe no banco, entao esse filtro comeca sem esconder
@@ -211,9 +259,7 @@ def _montar_filtro_captacao(editais, hoje):
     datas_captacao = [datetime.fromisoformat(e["visto_em"]).date() for e in editais]
     captacao_min_padrao = min(datas_captacao, default=hoje)
     intervalo_captacao_padrao = (captacao_min_padrao, hoje)
-    intervalo_captacao_escolhido = st.sidebar.date_input(
-        "Captado entre (data)", value=intervalo_captacao_padrao
-    )
+    intervalo_captacao_escolhido = st.sidebar.date_input("Entre", value=intervalo_captacao_padrao)
     if len(intervalo_captacao_escolhido) == 2:
         captacao_data_inicial, captacao_data_final = intervalo_captacao_escolhido
     else:
@@ -344,7 +390,7 @@ def _eh_urgente(prazo):
     return 0 <= dias_restantes <= DIAS_LIMIAR_URGENTE
 
 
-def _destacar_termos(texto, termos, min_radical):
+def _destacar_termos(texto, termos, min_radical, estilo="forte"):
     """Envolve em destaque cada palavra do texto original que bate com
     algum dos termos que fizeram esse edital entrar no segmento. Usa a
     mesma regra de match do filtro.py (prefixo pra termo longo, palavra
@@ -353,9 +399,31 @@ def _destacar_termos(texto, termos, min_radical):
 
     Termos de mais de uma palavra (ex.: "agua sanitaria") nao sao
     destacados por essa funcao, ela so trabalha palavra a palavra.
+
+    estilo="forte" (padrao): fundo brass solido, texto papel, mesmo peso
+    visual do badge de segmento. Usado dentro do "ver mais detalhes"
+    (objeto completo e tabela de itens), onde o usuario ja pediu pra ver
+    mais e pode absorver mais destaque.
+
+    estilo="suave": so negrito + sublinhado em brass, sem fundo. Usado
+    so no resumo do card (sempre visivel, mesmo fechado): com muitos
+    cards na tela ao mesmo tempo, o resumo destacado no mesmo peso do
+    badge deixava o dourado competindo consigo mesmo em cada card
+    (confirmado contando de verdade: media de quase 2 destaques por
+    card, ate 4 no pior caso, Etapa 3 item 2). O badge continua sendo o
+    sinal forte de "isso bateu", o resumo so da um toque mais discreto.
     """
     texto_escapado = html.escape(texto)
     termos_normalizados = [t for t in (normalizar_texto(termo) for termo in termos) if " " not in t]
+
+    if estilo == "suave":
+        # background:transparent e obrigatorio aqui: <mark> tem fundo
+        # amarelo por padrao no navegador (estilo nativo do HTML), sem
+        # isso o fundo padrao continuava aparecendo por baixo do
+        # negrito/sublinhado, mesmo eu nunca tendo pedido fundo nenhum.
+        estilo_html = f"background:transparent; font-weight:600; text-decoration:underline; color:{COR_BRASS};"
+    else:
+        estilo_html = f"background:{COR_BRASS}; color:{COR_PAPER}; padding:0 3px; border-radius:2px;"
 
     def repor(match):
         palavra_original = match.group(0)
@@ -367,10 +435,7 @@ def _destacar_termos(texto, termos, min_radical):
                 else palavra_normalizada == termo
             )
             if bate:
-                return (
-                    f'<mark style="background:{COR_BRASS}; color:{COR_PAPER}; '
-                    f'padding:0 3px; border-radius:2px;">{palavra_original}</mark>'
-                )
+                return f'<mark style="{estilo_html}">{palavra_original}</mark>'
         return palavra_original
 
     return re.sub(r"\w+", repor, texto_escapado)
@@ -385,8 +450,12 @@ def _renderizar_badges(edital, urgente):
             f'{match["segmento"]}</span>'
         )
     if _tem_selo_me_epp(edital["beneficios_itens"]):
+        # title= vira um tooltip nativo do navegador ao passar o mouse,
+        # pra quem nao e do ramo de licitacao entender a sigla sem sair
+        # da tela (Etapa 3, item 8). Zero dependencia nova.
         pedacos.append(
-            f'<span style="background:{COR_INK}; color:{COR_PAPER}; padding:2px 10px; '
+            f'<span title="Benefício de tratamento favorecido para Microempresa ou Empresa de Pequeno Porte" '
+            f'style="background:{COR_INK}; color:{COR_PAPER}; padding:2px 10px; '
             f'border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:6px;">ME/EPP</span>'
         )
     if urgente:
@@ -459,8 +528,9 @@ def _renderizar_itens(itens, termos, min_radical):
 
     st.markdown(
         f"""
+        <div style="overflow-x:auto; margin-top:12px;">
         <table style="width:100%; border-collapse:collapse; font-family:'IBM Plex Sans',sans-serif;
-                       font-size:0.85rem; margin-top:12px;">
+                       font-size:0.85rem;">
             <thead>
                 <tr style="color:{COR_INK}; opacity:0.6; font-family:'IBM Plex Mono',monospace;
                            font-size:0.65rem; letter-spacing:0.06em; text-transform:uppercase;">
@@ -474,7 +544,13 @@ def _renderizar_itens(itens, termos, min_radical):
                 {"".join(linhas_html)}
             </tbody>
         </table>
+        </div>
         """,
+        # overflow-x:auto no div de fora: numa tela estreita, se a tabela
+        # nao couber, ela ganha uma barra de rolagem horizontal SO
+        # dentro dela, em vez de estourar a largura da pagina inteira
+        # (Etapa 3, item 5). Tirei o margin-top da table e coloquei no
+        # div, pra nao sobrar espaco duplicado entre os dois.
         unsafe_allow_html=True,
     )
 
@@ -542,7 +618,8 @@ def _renderizar_metadados_do_card(edital, prazo):
 def _renderizar_resumo_do_objeto(edital, todos_os_termos, min_radical):
     objeto_resumido = edital["objeto"][:220] + ("…" if len(edital["objeto"]) > 220 else "")
     st.markdown(
-        f'<div style="margin:12px 0 16px 0;">{_destacar_termos(objeto_resumido, todos_os_termos, min_radical)}</div>',
+        f'<div style="margin:12px 0 16px 0;">'
+        f'{_destacar_termos(objeto_resumido, todos_os_termos, min_radical, estilo="suave")}</div>',
         unsafe_allow_html=True,
     )
 
@@ -635,8 +712,13 @@ def _controles_paginacao(pagina_atual, total_paginas):
             st.rerun()
 
     with col_meio:
+        # Mesma linguagem monoespacada dos metadados do card (Etapa 3,
+        # item 1): antes esse texto ficava no padrao default do
+        # Streamlit, destoando do resto da tela.
         st.markdown(
-            f'<div style="text-align:center;">Página {pagina_atual} de {total_paginas}</div>',
+            f'<div style="text-align:center; font-family:\'IBM Plex Mono\',monospace; font-size:0.7rem; '
+            f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.7;">'
+            f'Página {pagina_atual} de {total_paginas}</div>',
             unsafe_allow_html=True,
         )
 
@@ -673,10 +755,25 @@ def _aplicar_estilo_dos_cards():
     )
 
 
+def _rotulo_mono(texto):
+    """Rotulo pequeno em monoespacada, pra ficar acima de um selectbox no
+    lugar do rotulo nativo dele (que sai no padrao default do Streamlit,
+    destoando do resto da tela). Usa label_visibility="collapsed" no
+    widget, nao um CSS mirando a estrutura interna dele: o rotulo nativo
+    continua existindo pra leitor de tela, so nao aparece visualmente.
+    """
+    st.markdown(
+        f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; letter-spacing:0.06em; '
+        f'text-transform:uppercase; color:{COR_INK}; opacity:0.6; margin-bottom:2px;">{texto}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def main():
-    _renderizar_cabecalho()
-    _aplicar_estilo_dos_cards()
     editais = carregar_editais()
+    _renderizar_cabecalho()
+    _renderizar_resumo_executivo(editais)
+    _aplicar_estilo_dos_cards()
     min_radical = carregar_min_radical()
 
     filtros = montar_filtros(editais)
@@ -684,11 +781,14 @@ def main():
 
     col_ordenacao, col_itens_por_pagina = st.columns([3, 1])
     with col_ordenacao:
+        _rotulo_mono("Ordenar por")
         ordenacao = st.selectbox(
-            "Ordenar por", ["Captação (mais recente)", "Encerramento (mais próximo)"]
+            "Ordenar por", ["Captação (mais recente)", "Encerramento (mais próximo)"],
+            label_visibility="collapsed",
         )
     with col_itens_por_pagina:
-        itens_por_pagina = st.selectbox("Itens por página", [10, 25, 50])
+        _rotulo_mono("Itens por página")
+        itens_por_pagina = st.selectbox("Itens por página", [10, 25, 50], label_visibility="collapsed")
 
     editais_filtrados = _ordenar(editais_filtrados, ordenacao)
 
@@ -705,7 +805,7 @@ def main():
     # card: o padrao do Streamlit aqui e 16px, o que ficava largo demais
     # logo antes de um bloco tao denso quanto a lista de cards.
     with st.container(gap="xsmall"):
-        st.write(f"**{len(editais_filtrados)}** de {len(editais)} edital(is) no banco batem com o filtro atual.")
+        st.write(f"**{len(editais_filtrados)}** de {len(editais)} editais no banco correspondem ao filtro atual.")
 
         editais_da_pagina, pagina_atual, total_paginas = _paginar(editais_filtrados, itens_por_pagina)
 
