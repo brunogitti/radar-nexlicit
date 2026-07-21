@@ -22,7 +22,7 @@ sys.path.insert(0, str(RAIZ_DO_PROJETO))
 
 import streamlit as st
 
-from captura import banco, filtro
+from captura import banco, filtro, pncp_client
 from captura.normalizacao import normalizar_texto
 
 COR_INK = "#12233D"
@@ -96,6 +96,19 @@ def carregar_itens(numero_controle_pncp):
     itens = banco.buscar_itens_do_edital(conexao, numero_controle_pncp)
     conexao.close()
     return itens
+
+
+@st.cache_data(ttl=60)
+def carregar_arquivos(link_pncp):
+    """Busca ao vivo na API do PNCP a lista de documentos/anexos do
+    edital (Tarefa B.2). Diferente de carregar_itens, isso NAO vem do
+    nosso banco: e uma chamada direta ao PNCP, feita so quando o usuario
+    abre o card (mesmo esquema de on_change="rerun" + .open de
+    carregar_itens), porque foi decisao explicita nao criar tabela nova
+    so pra um link de download.
+    """
+    cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(link_pncp)
+    return pncp_client.buscar_arquivos_da_compra(cnpj, ano, sequencial)
 
 
 @st.cache_data(ttl=60)
@@ -444,6 +457,34 @@ def _renderizar_itens(itens, termos, min_radical):
     )
 
 
+def _renderizar_documentos(documentos):
+    """Um st.link_button por documento, apontando direto pro arquivo no
+    servidor do PNCP (Tarefa B.2, opcao escolhida: sem guardar nada no
+    banco, sem o nosso servidor baixar o arquivo, so um link direto).
+
+    documentos == None significa "a busca falhou agora" (PNCP fora do
+    ar, timeout); lista vazia significa "esse edital nao tem nenhum
+    documento anexado". Sao duas mensagens diferentes de proposito, uma
+    nao e erro de verdade.
+    """
+    if documentos is None:
+        st.caption("Não foi possível buscar os documentos agora.")
+        return
+
+    if not documentos:
+        st.caption("Nenhum documento disponível para este edital.")
+        return
+
+    with st.container(horizontal=True):
+        for documento in documentos:
+            st.link_button(
+                documento["tipo_documento"] or "Documento",
+                documento["url"],
+                icon=":material/download:",
+                help=documento["titulo"],
+            )
+
+
 def _renderizar_card(edital, min_radical):
     # gap=None tira o espacamento automatico que o Streamlit poe entre
     # cada st.markdown aqui dentro. Sem isso, o respiro real de cada
@@ -509,6 +550,15 @@ def _renderizar_card(edital, min_radical):
             if detalhes.open:
                 itens = carregar_itens(edital["numero_controle_pncp"])
                 _renderizar_itens(itens, todos_os_termos, min_radical)
+
+                st.markdown(
+                    f'<div style="font-family:\'IBM Plex Mono\',monospace; font-size:0.65rem; '
+                    f'letter-spacing:0.06em; text-transform:uppercase; color:{COR_INK}; opacity:0.6; '
+                    f'margin-top:16px; margin-bottom:6px;">Documentos</div>',
+                    unsafe_allow_html=True,
+                )
+                documentos = carregar_arquivos(edital["link_pncp"])
+                _renderizar_documentos(documentos)
 
 
 def _paginar(lista, itens_por_pagina):

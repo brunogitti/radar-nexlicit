@@ -1,8 +1,9 @@
 """
-Testes do captura/pncp_client.py, so da parte que busca os itens de uma
-compra (buscar_itens_da_compra). Nao bate na API de verdade: troca
-requests.get por uma versao falsa, do mesmo jeito que test_email_sender.py
-troca o smtplib.SMTP.
+Testes do captura/pncp_client.py: itens de uma compra
+(buscar_itens_da_compra), documentos/anexos (buscar_arquivos_da_compra) e
+a extracao de cnpj/ano/sequencial do link_pncp. Nao bate na API de
+verdade: troca requests.get por uma versao falsa, do mesmo jeito que
+test_email_sender.py troca o smtplib.SMTP.
 
 Como rodar (com o venv ativado, na pasta do projeto):
     python -m pytest tests/test_pncp_client.py -v
@@ -79,5 +80,67 @@ def test_falha_de_rede_devolve_none_sem_travar(monkeypatch):
     monkeypatch.setattr(pncp_client.requests, "get", get_que_sempre_falha)
 
     resultado = pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert resultado is None
+
+
+def test_extrai_cnpj_ano_sequencial_do_link_pncp():
+    link = "https://pncp.gov.br/app/editais/47842836000105/2026/118"
+
+    cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(link)
+
+    assert cnpj == "47842836000105"
+    assert ano == 2026
+    assert sequencial == 118
+
+
+def test_extrai_cnpj_ano_sequencial_ignora_barra_no_final():
+    link = "https://pncp.gov.br/app/editais/47842836000105/2026/118/"
+
+    cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(link)
+
+    assert (cnpj, ano, sequencial) == ("47842836000105", 2026, 118)
+
+
+def test_devolve_documentos_no_formato_esperado_pelo_painel(monkeypatch):
+    documentos_crus_da_api = [
+        {
+            "titulo": "EDITAL E ANEXOS - PREGAO 36.2026.pdf",
+            "tipoDocumentoNome": "Edital",
+            "url": "https://pncp.gov.br/pncp-api/v1/orgaos/47842836000105/compras/2026/118/arquivos/2",
+        },
+    ]
+    monkeypatch.setattr(
+        pncp_client.requests, "get",
+        lambda url, params, timeout: _RespostaFalsa(200, documentos_crus_da_api),
+    )
+
+    documentos = pncp_client.buscar_arquivos_da_compra("47842836000105", 2026, 118)
+
+    assert documentos == [{
+        "titulo": "EDITAL E ANEXOS - PREGAO 36.2026.pdf",
+        "tipo_documento": "Edital",
+        "url": "https://pncp.gov.br/pncp-api/v1/orgaos/47842836000105/compras/2026/118/arquivos/2",
+    }]
+
+
+def test_compra_sem_documentos_devolve_lista_vazia(monkeypatch):
+    monkeypatch.setattr(
+        pncp_client.requests, "get",
+        lambda url, params, timeout: _RespostaFalsa(200, []),
+    )
+
+    assert pncp_client.buscar_arquivos_da_compra("00000000000000", 2026, 1) == []
+
+
+def test_falha_de_rede_ao_buscar_documentos_devolve_none_sem_travar(monkeypatch):
+    monkeypatch.setattr(pncp_client.time, "sleep", lambda segundos: None)
+
+    def get_que_sempre_falha(url, params, timeout):
+        raise requests.exceptions.ConnectionError("sem rede, de proposito")
+
+    monkeypatch.setattr(pncp_client.requests, "get", get_que_sempre_falha)
+
+    resultado = pncp_client.buscar_arquivos_da_compra("00000000000000", 2026, 1)
 
     assert resultado is None

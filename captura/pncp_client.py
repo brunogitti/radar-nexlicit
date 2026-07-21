@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 URL_CONTRATACOES_PROPOSTA = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
 URL_ITENS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens"
+URL_ARQUIVOS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
 
 TAMANHO_PAGINA = 50  # confirmado no Swagger: esse e o maximo permitido pela API
 TIMEOUT_SEGUNDOS = 30
@@ -102,6 +103,21 @@ def _montar_edital(item):
         link_sistema_origem=item.get("linkSistemaOrigem"),
         link_pncp=link_pncp,
     )
+
+
+def extrair_cnpj_ano_sequencial(link_pncp):
+    """Tira cnpj, ano e sequencial de dentro de um link_pncp ja montado por
+    _montar_edital (formato .../editais/{cnpj}/{ano}/{sequencial}).
+
+    Existe porque cnpj/ano/sequencial nao ficam guardados como colunas
+    separadas no banco (so dentro do objeto Edital em memoria, durante a
+    captura), entao qualquer coisa que precise deles depois de salvo
+    recupera assim: primeiro o scripts/backfill_itens.py (Tarefa A.3),
+    agora o painel tambem, pra buscar os documentos/anexos ao vivo
+    (Tarefa B.1).
+    """
+    cnpj, ano, sequencial = link_pncp.rstrip("/").split("/")[-3:]
+    return cnpj, int(ano), int(sequencial)
 
 
 def buscar_contratacoes_com_proposta_aberta(codigo_municipio_ibge, dias_janela=90):
@@ -197,4 +213,45 @@ def buscar_itens_da_compra(cnpj, ano, sequencial):
             "tipo_beneficio": item.get("tipoBeneficioNome"),
         }
         for item in itens_crus
+    ]
+
+
+def buscar_arquivos_da_compra(cnpj, ano, sequencial):
+    """Busca a lista de documentos/anexos de uma compra especifica
+    (edital, termo de referencia, etc.), cada um ja com a URL de download
+    direto do PNCP (Tarefa B.1, Parte B da entrega 2).
+
+    Endpoint nao documentado no Swagger oficial (mesma situacao do
+    endpoint de itens), confirmado testando de verdade contra dois
+    editais reais antes de codar isso (ver sondagem).
+
+    Diferente dos itens, isso NUNCA e salvo no banco: o painel busca
+    isso ao vivo, so quando o usuario abre o card (decisao explicita,
+    pra nao criar tabela nova so pra um link de download).
+
+    Tratamento de erro proprio: se a chamada falhar, devolve None (nao
+    derruba a execucao). None e diferente de lista vazia: None significa
+    "nao consegui buscar agora", lista vazia significa "esse edital
+    realmente nao tem nenhum documento anexado".
+    """
+    identificador = f"{cnpj}/{ano}/{sequencial}"
+    url = URL_ARQUIVOS_DA_COMPRA.format(cnpj=cnpj, ano=ano, sequencial=sequencial)
+
+    try:
+        resposta = _fazer_requisicao(url, params=None)
+    except (RuntimeError, requests.exceptions.HTTPError) as erro:
+        logger.warning(
+            "Nao consegui buscar os documentos do edital %s: %s",
+            identificador, erro,
+        )
+        return None
+
+    documentos_crus = resposta.json()
+    return [
+        {
+            "titulo": documento.get("titulo"),
+            "tipo_documento": documento.get("tipoDocumentoNome"),
+            "url": documento.get("url"),
+        }
+        for documento in documentos_crus
     ]

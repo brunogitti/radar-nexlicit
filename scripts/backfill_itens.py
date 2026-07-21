@@ -14,9 +14,8 @@ salvo e pulado, e banco.salvar_itens faz upsert pela chave composta
 
 cnpj/ano/sequencial nao existem como colunas separadas no banco (mesma
 limitacao ja registrada em ressincronizar_banco.py), entao esse script
-extrai os tres de dentro do link_pncp que ja esta salvo, no formato
-https://pncp.gov.br/app/editais/{cnpj}/{ano}/{sequencial} (gerado assim
-desde a Tarefa 1.0, ver pncp_client._montar_edital).
+usa pncp_client.extrair_cnpj_ano_sequencial pra tirar os tres de dentro
+do link_pncp que ja esta salvo.
 
 Como rodar (com o venv ja ativado):
     python scripts/backfill_itens.py
@@ -36,15 +35,6 @@ from captura import banco, pncp_client
 PAUSA_ENTRE_CHAMADAS_SEGUNDOS = 1.5
 
 
-def _extrair_cnpj_ano_sequencial(link_pncp):
-    """Tira cnpj, ano e sequencial de dentro do link_pncp ja salvo. Os tres
-    ultimos pedacos da URL, separados por "/", sao exatamente o que o
-    endpoint de itens precisa.
-    """
-    cnpj, ano, sequencial = link_pncp.rstrip("/").split("/")[-3:]
-    return cnpj, int(ano), int(sequencial)
-
-
 def preencher_itens_faltantes():
     conexao = banco.conectar()
     linhas = banco.consultar_historico(conexao)
@@ -60,7 +50,7 @@ def preencher_itens_faltantes():
             time.sleep(PAUSA_ENTRE_CHAMADAS_SEGUNDOS)
         total_chamadas += 1
 
-        cnpj, ano, sequencial = _extrair_cnpj_ano_sequencial(linha["link_pncp"])
+        cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(linha["link_pncp"])
         itens = pncp_client.buscar_itens_da_compra(cnpj, ano, sequencial)
 
         if itens is None:
