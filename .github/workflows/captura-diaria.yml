@@ -4,7 +4,6 @@ on:
   schedule:
     - cron: "7 10 * * *" # 7h07 no horario de Brasilia (UTC-3)
     - cron: "7 16 * * *" # 13h07 no horario de Brasilia (UTC-3)
-    - cron: "55 19 * * *" # TEMPORARIO: teste de disparo automatico (24/07), remover depois
   workflow_dispatch: {} # permite rodar manualmente pela interface do GitHub, pra testar
 
 jobs:
