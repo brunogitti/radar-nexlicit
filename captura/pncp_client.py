@@ -20,8 +20,18 @@ URL_ITENS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{an
 URL_ARQUIVOS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
 
 TAMANHO_PAGINA = 50  # confirmado no Swagger: esse e o maximo permitido pela API
-TIMEOUT_SEGUNDOS = 30
-MAX_TENTATIVAS = 3
+
+# 40s (nao 30s): testando de verdade contra o PNCP instavel (24/07), uma
+# resposta legitima (200) demorou 28.8s. 30s cortava essa resposta em cima
+# da hora; 40s da uma margem sem esperar demais quando o PNCP realmente
+# esta fora do ar (o proprio backend dele parece desistir por volta dos 30s
+# e devolver 500, entao esperar muito mais que isso nao ajudaria).
+TIMEOUT_SEGUNDOS = 40
+
+# 5 (nao 3): na mesma sondagem de 24/07, das 5 tentativas seguidas contra o
+# mesmo municipio, so as 2 ultimas (4a e 5a) responderam rapido e normal.
+# 3 tentativas nao teriam sido suficientes pra atravessar aquela janela ruim.
+MAX_TENTATIVAS = 5
 
 # Pausa entre uma chamada e outra pra API do PNCP (entre municipios em
 # main.py, entre editais em scripts/backfill_itens.py). Descobrimos
@@ -46,9 +56,16 @@ SITUACAO_DIVULGADA_NO_PNCP = 1
 
 def _fazer_requisicao(url, params, max_tentativas=MAX_TENTATIVAS):
     """Faz um GET com retry: tenta de novo em erro de rede, 429 (limite de
-    requisicoes) ou 5xx (erro do servidor do PNCP). Nao tenta de novo em
+    requisicoes), 5xx (erro do servidor do PNCP) ou 422. Nao tenta de novo em
     outros erros (400, 404...), porque nesses casos o problema e no que a
     gente mandou, tentar de novo nao vai mudar o resultado.
+
+    422 entrou na lista depois de um caso real (Rubinéia, 24/07): o mesmo
+    parametro (sempre valido, vem do nosso municipios.csv) devolveu 422 uma
+    vez e 200 normalmente logo em seguida, no meio de uma janela de varios
+    500 e timeout do PNCP ("Failed to obtain JDBC Connection... HikariPool-1
+    - Connection is not available"). Ou seja, nao e erro de parametro nosso,
+    e mais um sintoma do banco de dados do PNCP sobrecarregado.
     """
     for tentativa in range(1, max_tentativas + 1):
         try:
@@ -66,7 +83,7 @@ def _fazer_requisicao(url, params, max_tentativas=MAX_TENTATIVAS):
             if resposta.status_code in (200, 204):
                 return resposta
 
-            if resposta.status_code not in (429, 500, 502, 503, 504):
+            if resposta.status_code not in (422, 429, 500, 502, 503, 504):
                 # erro nosso (parametro errado, etc), tentar de novo nao ajuda
                 resposta.raise_for_status()
 

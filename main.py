@@ -64,6 +64,7 @@ def capturar_editais(municipios, dias):
     proximos, em vez de derrubar a execucao inteira.
     """
     todos_os_editais = []
+    municipios_com_falha = []
 
     for indice, municipio in enumerate(municipios):
         if indice > 0:
@@ -78,9 +79,21 @@ def capturar_editais(municipios, dias):
                 "Falhei ao buscar editais de %s/%s, pulando este municipio: %s",
                 municipio["municipio"], municipio["uf"], erro,
             )
+            municipios_com_falha.append(f"{municipio['municipio']}/{municipio['uf']}")
             continue
 
         todos_os_editais.extend(editais_do_municipio)
+
+    # Aviso resumido e bem visivel no final: sem isso, um municipio que
+    # falha (PNCP instavel, ver pncp_client) some no meio de varias linhas
+    # de log e a execucao inteira continua marcada como sucesso no GitHub
+    # Actions, dando a falsa impressao de captura completa (Tarefa de
+    # diagnostico da lacuna de 21 a 24/07/2026).
+    if municipios_com_falha:
+        logger.warning(
+            "RESUMO: %s de %s municipio(s) falharam nesta execucao e ficaram de fora: %s",
+            len(municipios_com_falha), len(municipios), ", ".join(municipios_com_falha),
+        )
 
     return todos_os_editais
 
