@@ -46,7 +46,7 @@ jobs:
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python main.py --dias 7 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
+        run: python main.py --dias 30 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
 
       # Publica o banco atualizado na branch "data": pega o codigo atual
       # (o mesmo da master, ja que o checkout no inicio do job partiu
