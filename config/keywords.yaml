@@ -30,6 +30,14 @@ segmentos:
   - nome: Limpeza
     regras:
       - termos: [material, limpeza]
+      # "materiais" (plural de material) precisa de regra propria: o
+      # casamento por radical exige que a palavra do texto COMECE com o
+      # termo, e "materiais" diverge de "material" bem na ultima letra
+      # (l vs i), entao o radical "material" nao pega esse plural.
+      # Confirmado com edital real de Barretos (Etapa de calibracao).
+      # Mesmo problema em qualquer regra que hoje usa so "material": ao
+      # criar uma regra nova assim, repetir tambem com "materiais".
+      - termos: [materiais, limpeza]
       - termos: [produtos, limpeza]
       - termos: [detergente]
       - termos: [agua sanitaria]
@@ -48,7 +56,9 @@ segmentos:
   - nome: Expediente
     regras:
       - termos: [material, expediente]
+      - termos: [materiais, expediente]
       - termos: [material, escritorio]
+      - termos: [materiais, escritorio]
       - termos: [papel, sulfite]
       - termos: [papel, a4]
       - termos: [caneta]
@@ -63,6 +73,7 @@ segmentos:
     regras:
       - termos: [copa, cozinha]
       - termos: [material, copa]
+      - termos: [materiais, copa]
       - termos: [cafe]
       - termos: [acucar]
       - termos: [copo, descartavel]
@@ -126,6 +137,7 @@ segmentos:
   - nome: Elétrica
     regras:
       - termos: [material, eletrico]
+      - termos: [materiais, eletrico]
       - termos: [lampada]
       - termos: [luminaria]
       - termos: [refletor]
@@ -135,6 +147,7 @@ segmentos:
   - nome: Hidráulica
     regras:
       - termos: [material, hidraulico]
+      - termos: [materiais, hidraulico]
       - termos: [torneira]
       - termos: [mangueira]
       - termos: [tubo, pvc]
@@ -145,6 +158,7 @@ segmentos:
   - nome: Construção
     regras:
       - termos: [material, construcao]
+      - termos: [materiais, construcao]
       - termos: [cimento]
       - termos: [areia]
       - termos: [brita]
@@ -157,6 +171,7 @@ segmentos:
   - nome: Gráfico
     regras:
       - termos: [material, grafico]
+      - termos: [materiais, grafico]
       - termos: [servico, grafico]
       - termos: [letreiro]
       - termos: [comunicacao, visual]
@@ -214,6 +229,7 @@ segmentos:
     regras:
       - termos: [decoracao]
       - termos: [material, decorativo]
+      - termos: [materiais, decorativo]
 
 # Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
 # regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
