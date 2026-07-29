@@ -214,6 +214,11 @@ segmentos:
       - termos: [peca, veiculo]
       - termos: [autopeca]
 
+  - nome: Pilha e Bateria
+    regras:
+      - termos: [bateria]
+      - termos: [pilha]
+
   - nome: Piscina
     regras:
       - termos: [piscina]
