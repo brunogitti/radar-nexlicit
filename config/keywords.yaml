@@ -162,11 +162,62 @@ segmentos:
       - termos: [cimento]
       - termos: [areia]
       - termos: [brita]
-      - termos: [tinta]
       - termos: [tijolo]
       - termos: [telha]
       - termos: [ferragem]
+
+  - nome: Tinta e Pintura
+    # Segmento separado de Construcao (de onde "tinta" veio) porque a lista
+    # de termos de tinta/pintura cresceu bastante: mantida dentro de
+    # Construcao, todo edital de tinta tambem apareceria com o rotulo
+    # generico "Construcao", atrapalhando a triagem. Mesmo raciocinio usado
+    # pra separar Pilha e Bateria de Automotivo. "massa corrida" tambem
+    # veio de Construcao pelo mesmo motivo: e produto de preparo de pintura.
+    regras:
+      - termos: [tinta]
+      - termos: [esmalte, sintetico]
+      - termos: [verniz, maritimo]
+      - termos: [verniz, acrilico]
+      - termos: [verniz, sintetico]
+      - termos: [verniz, brilhante]
+      - termos: [verniz, fosco]
+      - termos: [selador, acrilico]
+      - termos: [selador, parede]
+      - termos: [selador, pigmentado]
+      # "fundo" nunca aparece sozinho: a calibracao (03/08/2026, 337
+      # editais abertos) mostrou "fundo" batendo 4 vezes sem nenhuma
+      # relacao com pintura (sempre "Fundo Municipal de Saude/Assistencia
+      # Social", sentido administrativo). Precisa sempre de uma palavra
+      # companheira especifica de pintura.
+      - termos: [fundo, preparador]
+      - termos: [fundo, sintetico]
+      - termos: [fundo, anticorrosivo]
+      - termos: [fundo, madeira]
+      - termos: [fundo, metal]
+      - termos: [primer]
+      - termos: [textura, acrilica]
+      - termos: [textura, projetada]
+      - termos: [grafiato]
+      - termos: [revestimento, texturizado]
+      - termos: [impermeabilizante]
+      - termos: [manta, liquida]
+      - termos: [resina, impermeabilizante]
+      - termos: [resina, acrilica]
+      - termos: [resina, piso]
+      # [resina, agua] foi cogitado e descartado: a mesma calibracao mostrou
+      # "agua" batendo em 10 editais sem relacao com tinta (aparece ate no
+      # nome de autarquias tipo SAAE, Servico Autonomo de Agua e Esgoto,
+      # contaminando qualquer edital delas), risco de falso positivo maior
+      # que o ganho de recall.
+      - termos: [thinner]
+      - termos: [aguarras]
       - termos: [massa, corrida]
+      # "pincel"/"rolo" sozinhos tambem sao ambiguos ("rolo compactador" ja
+      # apareceu na calibracao, sem relacao com pintura). Compostos com
+      # "pintura", nao "tinta", pra nao empilhar a ambiguidade de "tinta"
+      # (cartucho de impressora) em cima da deles.
+      - termos: [pincel, pintura]
+      - termos: [rolo, pintura]
 
   - nome: Gráfico
     regras:
