@@ -287,6 +287,36 @@ segmentos:
       - termos: [material, decorativo]
       - termos: [materiais, decorativo]
 
+  - nome: Embalagens Plásticas
+    # Segmento pra fabricante de saco plastico, cliente novo da NexLicit.
+    # [saco, lixo] repete de proposito a mesma regra que ja existe em
+    # Limpeza (nao move, duplica): um edital de saco de lixo interessa
+    # tanto a quem compra pra limpeza quanto ao fabricante. Mesmo padrao
+    # ja usado com "bateria automotiva" (Automotivo e Pilha e Bateria).
+    regras:
+      - termos: [sacola, plastica]
+      - termos: [saco, plastico]
+      - termos: [embalagem, plastica]
+      - termos: [bobina, plastica]
+      - termos: [filme, plastico]
+      - termos: [saco, lixo]
+      - termos: [saco, hospitalar]
+      - termos: [saco, infectante]
+      - termos: [saco, leitoso]
+      # "polietileno" comecou solto na proposta, mas a calibracao
+      # (14/08/2026, 378 editais abertos) achou um caso real de escopo
+      # largo demais: "chapas de polietileno de alta densidade" pra
+      # revestir cacamba de caminhao basculante, nada a ver com saco ou
+      # embalagem. Composto com uma palavra de embalagem em vez de
+      # deixado solto, decisao do Bruno. As 3 formas abaixo foram
+      # recalibradas (15/08/2026, 382 editais abertos) sem bater nesse
+      # caso nem em nenhum outro falso positivo.
+      - termos: [polietileno, saco]
+      - termos: [polietileno, sacola]
+      - termos: [polietileno, filme]
+      - termos: [embalagem, flexivel]
+      - termos: [artefato, plastico]
+
 # Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
 # regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
 # preenchendo conforme os falsos positivos aparecerem nos primeiros dias de uso.
