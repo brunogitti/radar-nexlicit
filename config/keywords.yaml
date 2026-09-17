@@ -317,6 +317,70 @@ segmentos:
       - termos: [embalagem, flexivel]
       - termos: [artefato, plastico]
 
+  - nome: Locação de Brinquedos e Recreação
+    # Cliente novo da NexLicit: locacao de brinquedo infantil/inflavel e
+    # recreacao pra evento (castelo inflavel, touro mecanico, cama
+    # elastica, carrinho de pipoca/algodao doce, etc), nao fabricante nem
+    # fornecedor de brinquedo pedagogico. "brinquedo"/"locacao"/"aluguel"
+    # nunca aparecem soltos de proposito: sozinhos trariam ruido de compra
+    # de brinquedo pedagogico pra escola/creche, que nao e o nicho dele
+    # (confirmado na calibracao de 16/09/2026, 355 editais abertos: o
+    # termo "infantil" sozinho bateu numa aquisicao real de "playground
+    # infantil para apoio didatico pedagogico" numa EMEI).
+    regras:
+      - termos: [brinquedo, inflavel]
+      # [brinquedo, recreativo] comecou com 2 termos na proposta, mas a
+      # calibracao (16/09/2026) achou um falso positivo real: bateu numa
+      # aquisicao de material pedagogico em Santa Fe do Sul/SP ("aquisicao
+      # de materiais recreativos, jogos educativos e brinquedos... para as
+      # Secretarias"), ao lado de 2 acertos genuinos (Fernandopolis/SP,
+      # Fronteira/MG). Reforcado pra 3 termos com "servico": confirmado
+      # contra o texto completo e real do edital de Santa Fe do Sul
+      # (17/09/2026) que isso derruba o falso positivo sem perder nenhum
+      # dos 2 acertos genuinos, porque os dois usam "prestacao de
+      # servicos" e a compra pedagogica nao usa essa palavra em lugar
+      # nenhum do texto.
+      - termos: [brinquedo, recreativo, servico]
+      - termos: [brinquedo, evento]
+      - termos: [locacao, brinquedo]
+      - termos: [aluguel, brinquedo]
+      # "recreacao" fica solto: testado na calibracao, sem nenhum caso de
+      # ambiguidade real (recreacao escolar/idoso) ate agora. Se aparecer,
+      # compor com "evento" ou "infantil".
+      - termos: [recreacao]
+      - termos: [parque, infantil]
+      - termos: [parque, diversao]
+      # "pula-pula": o hifen normaliza pra ESPACO, nao some (confirmado
+      # com teste real em captura/normalizacao.py), entao "pula-pula"
+      # vira duas palavras "pula pula", nao uma palavra so "pulapula" (que
+      # nunca bateria em nada) nem o termo solto "pula" (4 letras, curto
+      # demais pro min_radical, bateria em qualquer uso do verbo "pular").
+      # Um item so na lista com espaco = frase exata, mesmo padrao ja
+      # usado em "agua sanitaria" no segmento Limpeza.
+      - termos: [pula pula]
+      - termos: [cama, elastica]
+      - termos: [castelo, inflavel]
+      # "tobogã" comecou solto na proposta, mas tem o mesmo risco que o
+      # Bruno ja tinha identificado pro "escorregador" (aparece em compra
+      # de playground/parquinho escolar, obra publica, nao locacao de
+      # evento). Composto com "piscina", espelhando exatamente a regra do
+      # escorregador logo abaixo. "tobogã aquático"/"toboágua" ficou de
+      # fora por enquanto: nenhuma das variantes testadas (frase exata,
+      # composta, forma com hifen) bateu em nada real nas duas
+      # calibracoes, sem base pra cravar uma grafia especifica ainda.
+      - termos: [toboga, piscina]
+      - termos: [escorregador, piscina]
+      - termos: [piscina, bolinha]
+      - termos: [futebol, sabao]
+      - termos: [guerra, cotonete]
+      - termos: [touro, mecanico]
+      - termos: [touro, inflavel]
+      - termos: [futebol, inflavel]
+      - termos: [carrinho, pipoca]
+      - termos: [carrinho, algodao]
+      - termos: [carrinho, churros]
+      - termos: [carrinho, alimentacao]
+
 # Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
 # regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
 # preenchendo conforme os falsos positivos aparecerem nos primeiros dias de uso.
