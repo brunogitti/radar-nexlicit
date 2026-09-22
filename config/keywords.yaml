@@ -381,6 +381,56 @@ segmentos:
       - termos: [carrinho, churros]
       - termos: [carrinho, alimentacao]
 
+  - nome: TI e Serviços Correlatos
+    # Cliente novo da NexLicit, em Piranguinho/MG: prestador de servico de
+    # informatica e correlatos. Toda regra tem uma ancora clara de TI
+    # (informatica, tecnologia+informacao, computador, notebook,
+    # impressora, sistema, software, desk), em vez de cruzar duas palavras
+    # genericas entre si, mesma armadilha ja vista em bobina+plastica,
+    # fundo+X, resina+agua em segmentos anteriores. "servidor" so aparece
+    # composto com "informatica", nunca sozinho: a calibracao (22/09/2026,
+    # 346 editais abertos) confirmou que "servidor" sozinho bate quase
+    # sempre no sentido de servidor publico (funcionario), nunca servidor
+    # de rede. "TI" (a sigla) nao entra em nenhuma regra, curta demais pro
+    # min_radical, bateria na palavra "ti" pronome.
+    # "informatica" ja e regra solta no segmento Informatica existente,
+    # entao todo edital que bater aqui via [informatica, X] tambem aparece
+    # la, de proposito, mesmo padrao ja usado com saco+lixo
+    # (Limpeza/Embalagens Plasticas) e bateria (Automotivo/Pilha e Bateria).
+    regras:
+      - termos: [informatica, suporte]
+      - termos: [informatica, manutencao]
+      - termos: [informatica, rede]
+      - termos: [informatica, servidor]
+      - termos: [informatica, cabeamento]
+      - termos: [informatica, infraestrutura]
+      - termos: [informatica, consultoria]
+      - termos: [informatica, outsourcing]
+      - termos: [informatica, backup]
+      - termos: [tecnologia, informacao]
+      - termos: [servico, informatica]
+      - termos: [manutencao, computador]
+      - termos: [manutencao, notebook]
+      - termos: [manutencao, impressora]
+      # 3 termos de proposito, pra nao pegar manutencao de rede de
+      # agua/esgoto/eletrica, extremamente comum em edital de prefeitura.
+      - termos: [manutencao, rede, computador]
+      # [desenvolvimento, sistema] comecou com 2 termos na proposta, mas a
+      # calibracao (22/09/2026) achou um falso positivo real, confirmado
+      # com o texto completo do edital: Monte Aprazivel/SP, "workshop de
+      # DESENVOLVIMENTO de talentos" (metodologia Gallup, oficina
+      # recreativa infantil) + "SISTEMA de Garantia de Direitos" (termo do
+      # Estatuto da Crianca e Adolescente), nada de TI. Reforcado pra 3
+      # termos com "informatica": confirmado direto contra esse mesmo
+      # texto (23/09/2026) que isso derruba o falso positivo, sem perder
+      # os acertos genuinos de [tecnologia, informacao] e
+      # [manutencao, impressora] vistos na mesma calibracao.
+      - termos: [desenvolvimento, sistema, informatica]
+      - termos: [desenvolvimento, software]
+      - termos: [help, desk]
+      - termos: [service, desk]
+      - termos: [suporte, tecnico, informatica]
+
 # Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
 # regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
 # preenchendo conforme os falsos positivos aparecerem nos primeiros dias de uso.
