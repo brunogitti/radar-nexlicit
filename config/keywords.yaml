@@ -431,6 +431,56 @@ segmentos:
       - termos: [service, desk]
       - termos: [suporte, tecnico, informatica]
 
+  - nome: Tapeçaria, Capotaria e Estofamento
+    # Cliente novo da NexLicit: Auto Capas Santo Expedito (CNPJ
+    # 20628622000176), tapecaria em geral (veicular, hospitalar,
+    # mobiliario), capotaria, capas sob medida. Nao atende sofa, de
+    # proposito, nenhuma regra usa essa palavra.
+    # Toda regra tem uma ancora forte de tapecaria/estofamento
+    # (tapecaria, capotaria, estofamento, estofado, capa/capas,
+    # confeccao), nunca dois termos genericos cruzados entre si (ex.:
+    # "reforma"+"cadeiras" sozinhos, sem ancora, pegaria qualquer reforma
+    # predial ou compra de mobiliario). Mesma armadilha ja vista em
+    # bobina+plastica, fundo+X, resina+agua, desenvolvimento+sistema em
+    # segmentos anteriores.
+    # "capotaria" fica sempre composto, nunca solto: a calibracao
+    # (01/10/2026, 372 editais abertos) nao achou nenhuma aparicao dele,
+    # nem sozinho nem composto, entao nao ha dado pra confirmar que e
+    # seguro deixar solto. Mesma politica de nao assumir sem caso real,
+    # nos dois sentidos (nem excluir nem incluir sem evidencia).
+    regras:
+      - termos: [tapecaria, automotiva]
+      - termos: [tapecaria, veicular]
+      - termos: [tapecaria, hospitalar]
+      - termos: [tapecaria, mobiliario]
+      - termos: [tapecaria, reforma]
+      - termos: [tapecaria, recuperacao]
+      - termos: [tapecaria, manutencao]
+      - termos: [capotaria, veiculo]
+      - termos: [capotaria, reforma]
+      - termos: [capotaria, manutencao]
+      - termos: [estofamento, veiculo]
+      - termos: [estofamento, hospitalar]
+      - termos: [estofamento, cadeira]
+      - termos: [estofado, reforma]
+      - termos: [estofado, recuperacao]
+      - termos: [estofado, revestimento]
+      - termos: [estofado, manutencao]
+      # "capa" (4 letras) fica abaixo do min_radical (5): exige a palavra
+      # inteira, nunca casa por prefixo, entao NUNCA bate no plural
+      # "capas". Confirmado com teste real antes de aplicar. Por isso as
+      # 4 regras abaixo tem uma irma no plural logo em seguida (soma, nao
+      # substitui: "capa automotiva" e "capas automotivas" sao duas
+      # frases diferentes que podem aparecer em editais diferentes).
+      - termos: [capa, automotiva]
+      - termos: [capa, banco]
+      - termos: [capa, cadeira]
+      - termos: [confeccao, capa]
+      - termos: [capas, automotiva]
+      - termos: [capas, banco]
+      - termos: [capas, cadeira]
+      - termos: [confeccao, capas]
+
 # Termos vetados globalmente: se aparecerem, o edital é descartado mesmo que uma
 # regra tenha batido. Serve para cortar ruído recorrente. Comece vazio e vá
 # preenchendo conforme os falsos positivos aparecerem nos primeiros dias de uso.
