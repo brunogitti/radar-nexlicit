@@ -9,6 +9,9 @@ Como rodar (com o venv ativado, na pasta do projeto):
     python -m pytest tests/test_pncp_client.py -v
 """
 
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+
 import requests
 
 from captura import pncp_client
@@ -17,9 +20,10 @@ from captura import pncp_client
 class _RespostaFalsa:
     """Imita o pedaco de requests.Response que buscar_itens_da_compra usa."""
 
-    def __init__(self, status_code=200, corpo=None):
+    def __init__(self, status_code=200, corpo=None, headers=None):
         self.status_code = status_code
         self._corpo = corpo or []
+        self.headers = headers or {}
 
     def json(self):
         # uma resposta 204 de verdade nao tem corpo, entao .json() nela
@@ -223,6 +227,99 @@ def test_falha_na_segunda_pagina_devolve_none_e_nunca_lista_parcial(monkeypatch)
     resultado = pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
 
     assert resultado is None
+
+
+def _get_com_respostas_em_sequencia(respostas, esperas_registradas, monkeypatch):
+    """Troca requests.get por uma versao que devolve as `respostas` uma de
+    cada vez, na ordem, e troca time.sleep por uma versao que so anota
+    quantos segundos foram pedidos (o teste nao espera de verdade)."""
+    fila = list(respostas)
+    monkeypatch.setattr(pncp_client.time, "sleep", esperas_registradas.append)
+    monkeypatch.setattr(
+        pncp_client.requests, "get",
+        lambda url, params, timeout: fila.pop(0),
+    )
+
+
+def test_429_com_retry_after_em_segundos_espera_o_que_o_servidor_pediu(monkeypatch):
+    esperas = []
+    _get_com_respostas_em_sequencia([
+        _RespostaFalsa(429, headers={"Retry-After": "7"}),
+        _RespostaFalsa(200, _itens_de_teste(1, 3)),
+        _RespostaFalsa(200, []),
+    ], esperas, monkeypatch)
+
+    itens = pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert itens is not None
+    assert len(itens) == 3
+    assert esperas == [7]
+
+
+def test_429_sem_retry_after_usa_a_espera_crescente_de_sempre(monkeypatch):
+    esperas = []
+    _get_com_respostas_em_sequencia([
+        _RespostaFalsa(429),
+        _RespostaFalsa(429),
+        _RespostaFalsa(200, []),
+    ], esperas, monkeypatch)
+
+    itens = pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert itens == []
+    assert esperas == [2, 4]  # 2 ** tentativa, como antes
+
+
+def test_retry_after_enorme_e_limitado_ao_teto(monkeypatch):
+    esperas = []
+    _get_com_respostas_em_sequencia([
+        _RespostaFalsa(429, headers={"Retry-After": "900"}),
+        _RespostaFalsa(200, []),
+    ], esperas, monkeypatch)
+
+    pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert esperas == [pncp_client.MAX_ESPERA_RETRY_AFTER_SEGUNDOS]
+
+
+def test_retry_after_em_formato_de_data_espera_ate_essa_data(monkeypatch):
+    esperas = []
+    daqui_a_30_segundos = datetime.now(timezone.utc) + timedelta(seconds=30)
+    _get_com_respostas_em_sequencia([
+        _RespostaFalsa(429, headers={"Retry-After": format_datetime(daqui_a_30_segundos, usegmt=True)}),
+        _RespostaFalsa(200, []),
+    ], esperas, monkeypatch)
+
+    pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert len(esperas) == 1
+    assert 20 <= esperas[0] <= 30  # margem pro tempo que o teste leva pra rodar
+
+
+def test_retry_after_ilegivel_cai_na_espera_crescente(monkeypatch):
+    esperas = []
+    _get_com_respostas_em_sequencia([
+        _RespostaFalsa(429, headers={"Retry-After": "daqui a pouco"}),
+        _RespostaFalsa(200, []),
+    ], esperas, monkeypatch)
+
+    pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert esperas == [2]
+
+
+def test_429_em_todas_as_tentativas_devolve_none_depois_de_esperar(monkeypatch):
+    esperas = []
+    _get_com_respostas_em_sequencia(
+        [_RespostaFalsa(429, headers={"Retry-After": "5"})] * pncp_client.MAX_TENTATIVAS,
+        esperas, monkeypatch,
+    )
+
+    resultado = pncp_client.buscar_itens_da_compra("00000000000000", 2026, 1)
+
+    assert resultado is None
+    # espera entre as tentativas, nao depois da ultima
+    assert esperas == [5] * (pncp_client.MAX_TENTATIVAS - 1)
 
 
 def test_trava_de_seguranca_devolve_none(monkeypatch):

@@ -8,6 +8,7 @@ objetos Edital (ver modelos.py) com o que a API respondeu.
 import logging
 import time
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -66,6 +67,40 @@ PAUSA_ENTRE_CHAMADAS_SEGUNDOS = 1.5
 # TODO edital ser descartado, sem erro nenhum aparecer, silenciosamente.
 SITUACAO_DIVULGADA_NO_PNCP = 1
 
+# Teto da espera pedida pelo servidor via Retry-After. Se o PNCP pedir mais
+# que isso (ex.: 10 minutos), esperamos so este teto e tentamos de novo,
+# em vez de deixar a captura parada por muito tempo.
+MAX_ESPERA_RETRY_AFTER_SEGUNDOS = 60
+
+
+def _segundos_do_retry_after(resposta):
+    """Le o cabecalho Retry-After da resposta (o servidor dizendo "espere
+    tantos segundos antes de tentar de novo") e devolve a espera em
+    segundos, ou None se o cabecalho nao existir ou nao der pra entender.
+
+    O padrao HTTP permite dois formatos: um numero de segundos ("7") ou
+    uma data ("Wed, 21 Oct 2026 07:28:00 GMT"). Os dois sao tratados. O
+    resultado fica entre 1 e MAX_ESPERA_RETRY_AFTER_SEGUNDOS.
+
+    Nao sabemos se o PNCP chega a mandar esse cabecalho (nao conseguimos
+    provocar um 429 de proposito pra conferir). Por isso, quando ele nao
+    vem, quem chama usa a espera crescente de sempre.
+    """
+    valor = resposta.headers.get("Retry-After")
+    if not valor:
+        return None
+
+    try:
+        segundos = float(valor)
+    except ValueError:
+        try:
+            data_pedida = parsedate_to_datetime(valor)
+            segundos = (data_pedida - datetime.now(data_pedida.tzinfo)).total_seconds()
+        except (TypeError, ValueError):
+            return None
+
+    return min(max(segundos, 1), MAX_ESPERA_RETRY_AFTER_SEGUNDOS)
+
 
 def _fazer_requisicao(url, params, max_tentativas=MAX_TENTATIVAS):
     """Faz um GET com retry: tenta de novo em erro de rede, 429 (limite de
@@ -81,6 +116,9 @@ def _fazer_requisicao(url, params, max_tentativas=MAX_TENTATIVAS):
     e mais um sintoma do banco de dados do PNCP sobrecarregado.
     """
     for tentativa in range(1, max_tentativas + 1):
+        # so fica preenchida se o servidor pedir uma espera (Retry-After)
+        espera_pedida_pelo_servidor = None
+
         try:
             resposta = requests.get(url, params=params, timeout=TIMEOUT_SEGUNDOS)
         except requests.exceptions.RequestException as erro:
@@ -105,8 +143,16 @@ def _fazer_requisicao(url, params, max_tentativas=MAX_TENTATIVAS):
                 resposta.status_code, tentativa, max_tentativas, url,
             )
 
+            # 429 (limite de requisicoes) e 503 (servidor ocupado) sao os
+            # dois casos em que o padrao HTTP preve o Retry-After.
+            if resposta.status_code in (429, 503):
+                espera_pedida_pelo_servidor = _segundos_do_retry_after(resposta)
+
         if tentativa < max_tentativas:
-            espera_em_segundos = 2 ** tentativa  # 2s, depois 4s, depois 8s...
+            if espera_pedida_pelo_servidor is not None:
+                espera_em_segundos = espera_pedida_pelo_servidor
+            else:
+                espera_em_segundos = 2 ** tentativa  # 2s, depois 4s, depois 8s...
             logger.info("Esperando %ss antes de tentar de novo", espera_em_segundos)
             time.sleep(espera_em_segundos)
 
