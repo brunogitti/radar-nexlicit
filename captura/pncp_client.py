@@ -21,6 +21,19 @@ URL_ARQUIVOS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/
 
 TAMANHO_PAGINA = 50  # confirmado no Swagger: esse e o maximo permitido pela API
 
+# Endpoint de itens e OUTRO endpoint (nao esta no Swagger), com outro limite:
+# sem nenhum parametro ele devolve so 10 itens (confirmado em compra real,
+# 19/11/2026), o que cortava a lista de itens de quase metade dos editais
+# salvos. Com 500 por pagina, as compras medidas (a maior com 359 itens)
+# vieram inteiras numa chamada so. Mesmo assim, a parada do laco em
+# buscar_itens_da_compra NUNCA depende deste numero (ver la).
+ITENS_POR_PAGINA = 500
+
+# Trava de seguranca contra laco infinito (por exemplo, se a API ignorasse o
+# parametro "pagina" e devolvesse sempre a mesma pagina). 100 paginas de 500
+# seriam 50 mil itens, muito alem de qualquer compra real.
+MAX_PAGINAS_ITENS = 100
+
 # 40s (nao 30s): testando de verdade contra o PNCP instavel (24/07), uma
 # resposta legitima (200) demorou 28.8s. 30s cortava essa resposta em cima
 # da hora; 40s da uma margem sem esperar demais quando o PNCP realmente
@@ -209,25 +222,75 @@ def buscar_itens_da_compra(cnpj, ano, sequencial):
     so mora aqui), entao so vale a pena chamar depois que o edital ja passou
     pelo filtro de palavra-chave.
 
-    Tratamento de erro proprio: se essa chamada falhar (rede, timeout,
+    Paginacao (Fase 0.5): pede uma pagina de ITENS_POR_PAGINA itens de
+    cada vez, comecando na 1, e so PARA quando a API devolve uma pagina
+    vazia (ou uma resposta 204, "sem conteudo"). A regra "parar quando a
+    pagina vier menor que o pedido" foi descartada de proposito: o maximo
+    real do endpoint nao e documentado, e se a API cortasse a pagina num
+    numero menor que o pedido, essa regra pararia cedo e a lista voltaria
+    a ficar incompleta sem ninguem perceber.
+
+    Tratamento de erro proprio: se QUALQUER pagina falhar (rede, timeout,
     servidor fora do ar), NAO derruba a execucao inteira. So registra um
-    aviso no log e devolve None, e quem chamou entende None como "nao foi
-    possivel buscar os itens deste edital" (usado tanto pro selo ME/EPP
-    quanto pra lista completa de itens, Tarefa A.2).
+    aviso no log e devolve None, nunca a lista pela metade. Quem chamou
+    entende None como "nao foi possivel buscar os itens deste edital"
+    (usado tanto pro selo ME/EPP quanto pra lista completa de itens,
+    Tarefa A.2). None tambem e o resultado se a trava de seguranca
+    disparar (MAX_PAGINAS_ITENS) ou se uma pagina vier repetida.
     """
     identificador = f"{cnpj}/{ano}/{sequencial}"
     url = URL_ITENS_DA_COMPRA.format(cnpj=cnpj, ano=ano, sequencial=sequencial)
 
-    try:
-        resposta = _fazer_requisicao(url, params=None)
-    except (RuntimeError, requests.exceptions.HTTPError) as erro:
-        logger.warning(
-            "Nao consegui buscar os itens do edital %s, vai ficar sem itens salvos: %s",
-            identificador, erro,
-        )
-        return None
+    itens_crus = []
+    numeros_de_item_ja_vistos = set()
+    pagina = 1
 
-    itens_crus = resposta.json()
+    while True:
+        if pagina > MAX_PAGINAS_ITENS:
+            logger.warning(
+                "Edital %s passou de %s paginas de itens, desisti (trava de seguranca), "
+                "vai ficar sem itens salvos",
+                identificador, MAX_PAGINAS_ITENS,
+            )
+            return None
+
+        params = {"pagina": pagina, "tamanhoPagina": ITENS_POR_PAGINA}
+        try:
+            resposta = _fazer_requisicao(url, params=params)
+        except (RuntimeError, requests.exceptions.HTTPError) as erro:
+            logger.warning(
+                "Nao consegui buscar os itens do edital %s (pagina %s), vai ficar sem itens salvos: %s",
+                identificador, pagina, erro,
+            )
+            return None
+
+        # 204 nao tem corpo: chamar .json() nele quebraria. Significa "nao
+        # ha mais nada", igual a uma pagina vazia.
+        if resposta.status_code == 204:
+            break
+
+        itens_da_pagina = resposta.json()
+        if not itens_da_pagina:
+            break
+
+        itens_novos = [
+            item for item in itens_da_pagina
+            if item["numeroItem"] not in numeros_de_item_ja_vistos
+        ]
+        if not itens_novos:
+            # a pagina trouxe so itens que ja tinhamos: a API nao esta
+            # avancando de pagina, e continuar pedindo giraria pra sempre
+            logger.warning(
+                "Edital %s: a pagina %s de itens veio repetida, desisti, vai ficar sem itens salvos",
+                identificador, pagina,
+            )
+            return None
+
+        for item in itens_novos:
+            numeros_de_item_ja_vistos.add(item["numeroItem"])
+        itens_crus.extend(itens_novos)
+        pagina += 1
+
     return [
         {
             "numero_item": item["numeroItem"],
