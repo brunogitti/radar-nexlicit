@@ -1,0 +1,4 @@
+# Scripts de shell precisam terminar linha com LF, nunca CRLF: no Windows o
+# git pode converter pra CRLF ao baixar o repositorio, e o bash passa a
+# acusar "\r: command not found" e nao executa o script.
+*.sh text eol=lf

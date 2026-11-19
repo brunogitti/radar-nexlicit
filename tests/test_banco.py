@@ -193,3 +193,127 @@ def test_salvar_itens_duas_vezes_atualiza_em_vez_de_duplicar(tmp_path):
 
     assert len(itens) == 1
     assert itens[0]["descricao"] == "Descricao corrigida"
+
+
+# ---------------------------------------------------------------------------
+# Conferencias do arquivo de banco (blindagem do workflow, Fase 0.5.2)
+# ---------------------------------------------------------------------------
+
+
+def _banco_com_editais(tmp_path, quantidade, nome="com_editais.db"):
+    """Cria um arquivo de banco de verdade com `quantidade` editais e
+    devolve o caminho dele."""
+    caminho = str(tmp_path / nome)
+    conexao = banco.conectar(caminho)
+    editais = [
+        (_edital_de_teste(f"00000000000000-1-{numero:06d}/2026"), "novo", None)
+        for numero in range(1, quantidade + 1)
+    ]
+    banco.salvar(conexao, editais)
+    conexao.close()
+    return caminho
+
+
+def test_contar_editais_de_banco_vazio_devolve_zero(tmp_path):
+    caminho = _banco_com_editais(tmp_path, 0)
+
+    assert banco.contar_editais(caminho) == 0
+
+
+def test_contar_editais_conta_os_editais_salvos(tmp_path):
+    caminho = _banco_com_editais(tmp_path, 3)
+
+    assert banco.contar_editais(caminho) == 3
+
+
+def test_banco_inteiro_passa_na_verificacao_de_integridade(tmp_path):
+    caminho = _banco_com_editais(tmp_path, 2)
+
+    assert banco.verificar_integridade(caminho) == (True, "ok")
+
+
+def test_arquivo_que_nao_existe_falha_na_verificacao(tmp_path):
+    esta_ok, motivo = banco.verificar_integridade(str(tmp_path / "nao_existe.db"))
+
+    assert esta_ok is False
+    assert "nao existe" in motivo
+
+
+def test_arquivo_corrompido_falha_na_verificacao(tmp_path):
+    caminho = tmp_path / "lixo.db"
+    caminho.write_bytes(b"isto nao e um banco sqlite, e so texto solto" * 50)
+
+    esta_ok, motivo = banco.verificar_integridade(str(caminho))
+
+    assert esta_ok is False
+    assert "nao abre como banco" in motivo or "integrity_check" in motivo
+
+
+def test_banco_sem_a_tabela_editais_falha_na_verificacao(tmp_path):
+    import sqlite3
+
+    caminho = str(tmp_path / "outra_coisa.db")
+    conexao = sqlite3.connect(caminho)
+    conexao.execute("CREATE TABLE outra_coisa (id INTEGER)")
+    conexao.commit()
+    conexao.close()
+
+    esta_ok, motivo = banco.verificar_integridade(caminho)
+
+    assert esta_ok is False
+    assert "editais" in motivo
+
+
+def test_verificacao_nao_altera_o_arquivo(tmp_path):
+    caminho = _banco_com_editais(tmp_path, 2)
+    antes = (tmp_path / "com_editais.db").read_bytes()
+
+    banco.verificar_integridade(caminho)
+    banco.contar_editais(caminho)
+
+    assert (tmp_path / "com_editais.db").read_bytes() == antes
+
+
+def test_pode_publicar_quando_local_tem_mais_editais_que_o_remoto():
+    assert banco.decidir_se_pode_publicar(105, 100) == (True, "ok")
+
+
+def test_pode_publicar_quando_local_tem_o_mesmo_numero_de_editais():
+    assert banco.decidir_se_pode_publicar(100, 100) == (True, "ok")
+
+
+def test_pode_publicar_a_primeira_vez_sem_banco_remoto():
+    assert banco.decidir_se_pode_publicar(10, None) == (True, "ok")
+
+
+def test_bloqueia_banco_local_vazio():
+    pode, motivo = banco.decidir_se_pode_publicar(0, 100)
+
+    assert pode is False
+    assert "vazio" in motivo
+
+
+def test_bloqueia_banco_local_vazio_mesmo_sem_banco_remoto():
+    pode, _motivo = banco.decidir_se_pode_publicar(0, None)
+
+    assert pode is False
+
+
+def test_bloqueia_banco_local_menor_que_o_remoto():
+    pode, motivo = banco.decidir_se_pode_publicar(90, 100)
+
+    assert pode is False
+    assert "90" in motivo and "100" in motivo
+
+
+def test_permitir_reducao_libera_banco_local_menor_que_o_remoto():
+    pode, motivo = banco.decidir_se_pode_publicar(90, 100, permitir_reducao=True)
+
+    assert pode is True
+    assert "100 -> 90" in motivo
+
+
+def test_permitir_reducao_nao_libera_banco_vazio():
+    pode, _motivo = banco.decidir_se_pode_publicar(0, 100, permitir_reducao=True)
+
+    assert pode is False

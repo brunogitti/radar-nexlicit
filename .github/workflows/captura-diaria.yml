@@ -4,13 +4,30 @@ on:
   schedule:
     - cron: "7 10 * * *" # 7h07 no horario de Brasilia (UTC-3)
     - cron: "7 16 * * *" # 13h07 no horario de Brasilia (UTC-3)
-  workflow_dispatch: {} # permite rodar manualmente pela interface do GitHub, pra testar
+  workflow_dispatch: # permite rodar manualmente pela interface do GitHub
+    inputs:
+      permitir_inicio_do_zero:
+        description: "So na PRIMEIRA execucao de todas (nao existe branch data nem backups): permite criar um banco novo. Deixe desligado no uso normal."
+        type: boolean
+        default: false
+      permitir_reducao_do_banco:
+        description: "Permite publicar um banco com MENOS editais que o da branch data. So para uma reducao feita de proposito. Nunca libera banco vazio."
+        type: boolean
+        default: false
+
+# Uma execucao por vez, sempre. Se uma execucao manual coincidir com a
+# agendada, a segunda ESPERA a primeira terminar (cancel-in-progress: false
+# nao cancela a que ja esta rodando). Sem isso, as duas poderiam publicar o
+# banco ao mesmo tempo e a ultima apagaria o trabalho da outra.
+concurrency:
+  group: banco-radar
+  cancel-in-progress: false
 
 jobs:
   capturar:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # precisa poder empurrar (push) pra branch "data" no final
+      contents: write # precisa poder empurrar (push) pras branches "data" e "backups" no final
     steps:
       - name: Baixar o codigo do repositorio
         uses: actions/checkout@v4
@@ -24,20 +41,19 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      # A branch "data" e a unica fonte de persistencia do dados/radar.db
-      # agora: e nela que o banco fica salvo entre uma execucao e outra, e
-      # e ela tambem que o painel no Streamlit Cloud le pra mostrar os
-      # editais. Aqui a gente busca o banco salvo pela ultima execucao,
-      # se existir.
+      # A branch "data" e a unica fonte de persistencia do dados/radar.db:
+      # e nela que o banco fica salvo entre uma execucao e outra, e e ela
+      # tambem que o painel no Streamlit Cloud le pra mostrar os editais.
+      #
+      # Este passo NUNCA apaga o banco nem comeca do zero por engano: se nao
+      # conseguir falar com o GitHub, ou se o banco salvo estiver estragado,
+      # o job FALHA (e o GitHub avisa por e-mail) antes de capturar qualquer
+      # coisa ou mandar qualquer e-mail. A logica toda esta explicada em
+      # .github/scripts/restaurar_banco.sh e em docs/operacao-banco.md.
       - name: Restaurar o banco de dados ja vistos (branch data)
-        run: |
-          mkdir -p dados
-          if git fetch origin data 2>/dev/null && git show origin/data:dados/radar.db > dados/radar.db 2>/dev/null; then
-            echo "Banco restaurado da branch data (execucao anterior)."
-          else
-            echo "Branch data ainda nao tem banco salvo, comecando do zero."
-            rm -f dados/radar.db
-          fi
+        env:
+          PERMITIR_INICIO_DO_ZERO: ${{ inputs.permitir_inicio_do_zero }}
+        run: bash .github/scripts/restaurar_banco.sh
 
       - name: Rodar os testes automatizados
         run: python -m pytest tests/ -q
@@ -48,19 +64,19 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: python main.py --dias 30 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
 
-      # Publica o banco atualizado na branch "data": pega o codigo atual
-      # (o mesmo da master, ja que o checkout no inicio do job partiu
-      # dela) e adiciona so o dados/radar.db por cima. O --force
-      # sobrescreve o commit anterior da branch data em vez de acumular
-      # um commit novo a cada execucao, entao o historico dela nunca
-      # cresce. Ela existe so pra alimentar o painel, nao faz parte do
-      # historico "de portfolio" do projeto (isso continua sendo so a
-      # branch master).
-      - name: Publicar o banco atualizado na branch data
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -B data
-          git add -f dados/radar.db
-          git commit -m "Atualiza banco de editais ($(date -u +'%d/%m/%Y %H:%M UTC'))" --allow-empty
-          git push --force origin data
+      # Publica o banco atualizado, mas so depois de conferir que ele esta
+      # inteiro, nao esta vazio e nao tem menos editais que o banco que ja
+      # estava na branch data. Antes de sobrescrever, guarda um backup
+      # datado e compactado do banco anterior na branch "backups" (mantem os
+      # 7 mais recentes). Os dois envios tentam de novo em caso de falha de
+      # rede. Detalhes em .github/scripts/publicar_banco.sh.
+      #
+      # A branch data continua sendo recriada do zero a cada execucao (codigo
+      # atual da master + o banco, um commit so, --force), como antes: ela
+      # existe so pra alimentar o painel, nao faz parte do historico "de
+      # portfolio" do projeto (isso continua sendo so a branch master).
+      - name: Publicar o banco atualizado (branches data e backups)
+        env:
+          PERMITIR_INICIO_DO_ZERO: ${{ inputs.permitir_inicio_do_zero }}
+          PERMITIR_REDUCAO_DO_BANCO: ${{ inputs.permitir_reducao_do_banco }}
+        run: bash .github/scripts/publicar_banco.sh

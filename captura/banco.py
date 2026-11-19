@@ -309,3 +309,102 @@ def consultar_itens_do_edital(conexao, numero_controle_pncp):
         (numero_controle_pncp,),
     )
     return [dict(linha) for linha in cursor.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Conferencias do arquivo de banco (Fase 0.5.2, blindagem do workflow)
+#
+# Estas tres funcoes sao usadas pelos scripts em .github/scripts/ antes de
+# publicar o banco na branch "data": elas respondem "esse arquivo esta
+# inteiro?", "quantos editais tem?" e "pode ser publicado por cima do que ja
+# esta la?". Ficam aqui (e nao dentro do script em shell) pra poderem ser
+# testadas com pytest, como o resto do banco.
+# ---------------------------------------------------------------------------
+
+
+def _abrir_somente_leitura(caminho):
+    """Abre o arquivo de banco SEM poder alterar nada nele (modo "ro",
+    read-only). Assim uma conferencia nunca estraga o que esta conferindo.
+
+    O caminho vira um endereco "file:///..." porque e esse formato que o
+    SQLite exige pra aceitar o "?mode=ro". Path.as_uri() cuida de espacos
+    e barras no caminho.
+    """
+    endereco = Path(caminho).resolve().as_uri() + "?mode=ro"
+    return sqlite3.connect(endereco, uri=True)
+
+
+def contar_editais(caminho):
+    """Devolve quantos editais existem no arquivo de banco informado.
+    Levanta sqlite3.DatabaseError se o arquivo nao abrir como banco ou nao
+    tiver a tabela editais.
+    """
+    conexao = _abrir_somente_leitura(caminho)
+    try:
+        return conexao.execute("SELECT COUNT(*) FROM editais").fetchone()[0]
+    finally:
+        conexao.close()
+
+
+def verificar_integridade(caminho):
+    """Confere se o arquivo e um banco SQLite inteiro e com a tabela
+    editais. Devolve uma tupla (esta_ok, motivo): quando esta_ok e False,
+    motivo explica em texto o que deu errado.
+
+    PRAGMA integrity_check e o comando do proprio SQLite que varre o
+    arquivo procurando corrupcao. Ele responde a unica linha "ok" quando
+    esta tudo certo.
+    """
+    if not Path(caminho).is_file():
+        return False, f"o arquivo {caminho} nao existe"
+
+    try:
+        conexao = _abrir_somente_leitura(caminho)
+        try:
+            resultado = conexao.execute("PRAGMA integrity_check").fetchall()
+            if resultado != [("ok",)]:
+                return False, f"o integrity_check do SQLite reportou problema: {resultado[:3]}"
+
+            tabela_editais = conexao.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'editais'"
+            ).fetchone()
+            if tabela_editais is None:
+                return False, "o arquivo e um banco SQLite valido, mas nao tem a tabela editais"
+        finally:
+            conexao.close()
+    except sqlite3.DatabaseError as erro:
+        return False, f"o arquivo nao abre como banco SQLite: {erro}"
+
+    return True, "ok"
+
+
+def decidir_se_pode_publicar(quantidade_local, quantidade_remota, permitir_reducao=False):
+    """Decide se o banco local pode ser publicado por cima do banco remoto
+    (o que esta na branch "data"). Devolve (pode_publicar, motivo).
+
+    quantidade_remota e None quando ainda nao existe banco remoto
+    (primeira publicacao).
+
+    A aplicacao nunca apaga editais (so itens, numa regra futura de 60
+    dias), entao a contagem de editais nunca pode cair de uma execucao pra
+    outra. Se caiu, algo deu errado (banco restaurado errado, arquivo
+    novo no lugar do antigo...) e publicar por cima apagaria o historico.
+
+    permitir_reducao e a valvula de escape pra uma reducao deliberada
+    (ex.: limpeza de editais feita de proposito). Ela NAO libera banco
+    vazio: publicar um banco vazio nunca e intencional.
+    """
+    if quantidade_local == 0:
+        return False, "o banco local esta vazio (0 editais), publicar apagaria o historico"
+
+    if quantidade_remota is not None and quantidade_local < quantidade_remota:
+        if not permitir_reducao:
+            return False, (
+                f"o banco local tem menos editais ({quantidade_local}) que o remoto "
+                f"({quantidade_remota}), publicar apagaria historico"
+            )
+        return True, (
+            f"reducao permitida de proposito: {quantidade_remota} -> {quantidade_local} editais"
+        )
+
+    return True, "ok"
