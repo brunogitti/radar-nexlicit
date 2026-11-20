@@ -11,14 +11,17 @@
 
 RAIZ_DO_REPOSITORIO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python}"
+# shellcheck disable=SC2034  # usada pelos scripts que carregam este arquivo
 VERIFICAR_BANCO="$RAIZ_DO_REPOSITORIO/.github/scripts/verificar_banco.py"
 
 # O banco com que a captura trabalha.
+# shellcheck disable=SC2034  # usada pelos scripts que carregam este arquivo
 BANCO_LOCAL="dados/radar.db"
 
 # Copia do banco exatamente como estava na branch data quando este job
 # comecou. Serve de referencia pra comparar antes de publicar e vira o
 # backup. Fica na pasta dados/, que o git ignora (nunca vai pra commit).
+# shellcheck disable=SC2034  # usada pelos scripts que carregam este arquivo
 BANCO_REMOTO="dados/radar_remoto.db"
 
 # Esperas, em segundos, entre uma tentativa e outra de uma operacao de rede.
@@ -42,7 +45,8 @@ tentar_com_espera() {
   # falharam.
   local descricao="$1"
   shift
-  local esperas=($ESPERAS_ENTRE_TENTATIVAS)
+  local esperas
+  read -ra esperas <<< "$ESPERAS_ENTRE_TENTATIVAS"
   local total_de_tentativas=$(( ${#esperas[@]} + 1 ))
   local tentativa
 
@@ -73,7 +77,8 @@ consultar_branch() {
   # perguntar" sao coisas completamente diferentes, e tratar as duas
   # igual foi o que permitia apagar o banco por engano.
   local nome="$1"
-  local esperas=($ESPERAS_ENTRE_TENTATIVAS)
+  local esperas
+  read -ra esperas <<< "$ESPERAS_ENTRE_TENTATIVAS"
   local total_de_tentativas=$(( ${#esperas[@]} + 1 ))
   local tentativa codigo
 
