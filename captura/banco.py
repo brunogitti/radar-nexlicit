@@ -296,6 +296,18 @@ def salvar_itens(conexao, numero_controle_pncp, itens):
     conexao.commit()
 
 
+def edital_tem_itens_salvos(conexao, numero_controle_pncp):
+    """Diz se ja existe pelo menos um item salvo pra esse edital.
+    Usada pela captura pra decidir se um edital "sem mudanca" precisa ter
+    os itens gravados agora (porque a busca anterior pode ter falhado).
+    """
+    cursor = conexao.execute(
+        "SELECT 1 FROM itens_edital WHERE numero_controle_pncp = ? LIMIT 1",
+        (numero_controle_pncp,),
+    )
+    return cursor.fetchone() is not None
+
+
 def consultar_itens_do_edital(conexao, numero_controle_pncp):
     """Le os itens ja salvos de um edital especifico, do item 1 em diante.
 

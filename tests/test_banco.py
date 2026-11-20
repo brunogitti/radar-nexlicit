@@ -317,3 +317,14 @@ def test_permitir_reducao_nao_libera_banco_vazio():
     pode, _motivo = banco.decidir_se_pode_publicar(0, 100, permitir_reducao=True)
 
     assert pode is False
+
+
+def test_edital_tem_itens_salvos(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    numero = "00000000000000-1-000001/2026"
+
+    assert banco.edital_tem_itens_salvos(conexao, numero) is False
+
+    banco.salvar_itens(conexao, numero, [_item_de_teste()])
+
+    assert banco.edital_tem_itens_salvos(conexao, numero) is True

@@ -166,10 +166,22 @@ def salvar_itens_dos_editais(conexao, editais_classificados):
     resto. edital.itens fica None quando a busca em buscar_itens_dos_editais
     falhou (rede, PNCP fora do ar); nesse caso nao ha nada pra salvar pra
     esse edital especifico, os outros seguem normalmente.
+
+    Edital "sem_mudanca" (ja estava no banco): so grava os itens se ele
+    ainda NAO tem nenhum item salvo e a busca de agora devolveu uma lista
+    com itens. Isso conserta o caso em que a busca falhou na primeira vez:
+    sem isso o edital ficava sem itens pra sempre, porque "sem mudanca"
+    nunca era regravado. Se ele ja tem itens, nao mexe (nao regrava a toa).
     """
-    for edital, _status, _linha in editais_classificados:
-        if edital.itens is not None:
-            banco.salvar_itens(conexao, edital.numero_controle_pncp, edital.itens)
+    for edital, status, _linha in editais_classificados:
+        if not edital.itens:
+            # None (busca falhou) ou lista vazia (edital sem itens): nada a gravar
+            continue
+
+        if status == "sem_mudanca" and banco.edital_tem_itens_salvos(conexao, edital.numero_controle_pncp):
+            continue
+
+        banco.salvar_itens(conexao, edital.numero_controle_pncp, edital.itens)
 
 
 def imprimir_resumo(editais_classificados):
@@ -295,16 +307,20 @@ def main():
     editais_filtrados = buscar_itens_dos_editais(editais_filtrados)
 
     conexao_banco = banco.conectar()
-    editais_classificados = banco.classificar(conexao_banco, editais_filtrados)
+    todos_classificados = banco.classificar(conexao_banco, editais_filtrados)
+    editais_classificados = todos_classificados
 
     if not argumentos.incluir_vistos:
         editais_classificados = [item for item in editais_classificados if item[1] != "sem_mudanca"]
 
     imprimir_resumo(editais_classificados)
 
-    if not argumentos.dry_run and editais_classificados:
-        banco.salvar(conexao_banco, editais_classificados)
-        salvar_itens_dos_editais(conexao_banco, editais_classificados)
+    if not argumentos.dry_run:
+        if editais_classificados:
+            banco.salvar(conexao_banco, editais_classificados)
+        # usa a lista COMPLETA (com os "sem mudanca"), pra recuperar os itens
+        # de editais que ficaram sem nenhum por falha na busca anterior
+        salvar_itens_dos_editais(conexao_banco, todos_classificados)
 
     if argumentos.enviar_email and not argumentos.dry_run:
         # so entra no e-mail quem e novo/atualizado, mesmo que --incluir-vistos
