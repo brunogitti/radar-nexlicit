@@ -35,6 +35,10 @@ Bruno (dono do projeto) é iniciante em programação e fundador da NexLicit. Pr
 - `scripts/` guarda ferramentas auxiliares rodadas sob demanda (backfill, ressincronização, `reprocessar_itens_truncados.py`), nunca fazem parte do fluxo diário automatizado. Os scripts do fluxo diário (restaurar e publicar o banco) ficam em `.github/scripts/`.
 - **Busca de itens (`pncp_client.buscar_itens_da_compra`) pagina de verdade**: o endpoint de itens, sem parâmetros, devolve só 10 itens (isso cortou 350 editais do banco em 10 itens). Agora pede 500 por página e só para quando a página vem vazia ou 204, **nunca** por "página menor que o pedido" (o máximo real do endpoint não é documentado). Falha em qualquer página devolve `None`, nunca lista parcial. `_fazer_requisicao` respeita `Retry-After` em 429/503 (teto de 60 s).
 
+## Documentos privados
+
+O repositório é público. A pasta `docs/privado/` (ignorada pelo git, existe só na máquina do Bruno) guarda o planejamento da v2, o diagnóstico da Fase 0, as regras de palavras-chave de clientes e as decisões comerciais. Quando uma tarefa citar o "planejamento" ou o "diagnóstico", ler de lá (`docs/privado/planejamento-radar-v2.md`, `docs/privado/diagnostico-radar-v2.md`, `docs/privado/decisoes-comerciais.md`). Nunca copiar o conteúdo desses arquivos pra um arquivo versionado, nem citar cliente ou estratégia comercial em commit, README ou `docs/decisoes.md` (esse só guarda decisões técnicas).
+
 ## Riscos aceitos, não mitigados
 
 Riscos externos, fora do nosso código, que já avaliamos e decidimos não tentar corrigir por enquanto (custo/complexidade da mitigação maior que o benefício, ou fora do nosso controle). Registrados aqui pra não reabrir a mesma discussão do zero cada vez que acontecem de novo.

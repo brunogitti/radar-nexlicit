@@ -18,3 +18,7 @@ __pycache__/
 # Configuração local do Claude Code (ferramenta de IA usada no
 # desenvolvimento). É configuração de máquina, não faz parte do projeto.
 .claude/
+
+# Documentos privados (planejamento, regras de clientes, estrategia comercial).
+# O repositorio e publico, entao isso fica so na maquina do Bruno.
+docs/privado/
