@@ -1,10 +1,14 @@
 name: Captura diaria
 
+# Este workflow NAO tem mais agendamento proprio ("schedule"): o gatilho do
+# GitHub atrasava de 5 a 10 horas. Quem dispara a captura agora e:
+#   - o disparo externo (agendador gratuito) as 7h07 e 13h07 de Brasilia, e
+#   - o workflow "Agendador da captura" (agendador.yml), de 2 em 2 horas, que
+#     so dispara se o banco nao foi publicado nas ultimas 5 horas.
+# Os dois chamam o gatilho abaixo (workflow_dispatch). Passo a passo e
+# detalhes em docs/operacao-agendamento.md.
 on:
-  schedule:
-    - cron: "7 10 * * *" # 7h07 no horario de Brasilia (UTC-3)
-    - cron: "7 16 * * *" # 13h07 no horario de Brasilia (UTC-3)
-  workflow_dispatch: # permite rodar manualmente pela interface do GitHub
+  workflow_dispatch: # disparo externo, agendador.yml, ou a mao pela interface do GitHub
     inputs:
       permitir_inicio_do_zero:
         description: "So na PRIMEIRA execucao de todas (nao existe branch data nem backups): permite criar um banco novo. Deixe desligado no uso normal."

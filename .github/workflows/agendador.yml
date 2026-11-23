@@ -1,0 +1,54 @@
+name: Agendador da captura
+
+# Este workflow NAO captura nada. Ele so decide, de 2 em 2 horas, se vale
+# disparar o workflow "Captura diaria". Existe porque o agendamento do GitHub
+# (gatilho "schedule") atrasa de 5 a 10 horas e pode descartar execucoes, e
+# com varios gatilhos por dia sempre sobra algum que chega perto da hora.
+#
+# A trava (nao disparar se o banco foi publicado ha menos de 5 horas) vale
+# SO para este gatilho "schedule". O disparo externo (agendador gratuito,
+# veja docs/operacao-agendamento.md) chama a "Captura diaria" direto e nunca
+# passa por aqui, entao sempre roda.
+#
+# Fica separado da "Captura diaria" de proposito: aquele workflow tem uma
+# fila (concurrency) para nao rodar duas vezes juntas, e uma rodada que so
+# pula pela trava poderia tirar da fila um disparo externo que estivesse
+# esperando. Aqui nao ha fila, entao isso nao acontece.
+
+on:
+  schedule:
+    # Minuto 37 de toda hora par em UTC (21h37, 23h37, 1h37 ... no horario de
+    # Brasilia). O minuto 37 deixa folga depois do disparo externo (7h07 e 13h07).
+    - cron: "37 */2 * * *"
+  workflow_dispatch: # para testar a mao
+    inputs:
+      ignorar_trava:
+        description: "Dispara a captura sem conferir se ja houve uma recente. So para teste: gera uma captura de verdade."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read # le a data do ultimo commit da branch data
+  actions: write # dispara a "Captura diaria" e lista as execucoes dela
+
+jobs:
+  decidir-e-disparar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o codigo do repositorio
+        uses: actions/checkout@v4
+
+      - name: Decidir se vale disparar a captura
+        id: decisao
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          IGNORAR_TRAVA: ${{ inputs.ignorar_trava }}
+        run: bash .github/scripts/decidir_agendamento.sh
+
+      - name: Disparar a captura
+        if: ${{ steps.decisao.outputs.executar == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run captura-diaria.yml --repo "$GH_REPO" --ref "${{ github.ref_name }}"
