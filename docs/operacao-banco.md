@@ -45,6 +45,7 @@ Em Actions, "Captura diaria", "Run workflow":
 
 - `permitir_inicio_do_zero`: só para a primeira execução de todas. Deixe desligado.
 - `permitir_reducao_do_banco`: só se o banco novo tiver menos editais de propósito (por exemplo, uma limpeza). Nunca libera banco vazio.
+- `reprocessar_itens_truncados`: roda uma vez, a mão, depois de restaurar e antes da captura. Busca de novo os itens dos editais abertos que ficaram com exatamente 10 itens (ou nenhum) e grava no banco (`scripts/reprocessar_itens_truncados.py --gravar`). Não reclassifica e não envia e-mail. Passa pelas mesmas conferências de publicação (backup antes, banco não pode encolher).
 
 ## Como restaurar um backup (só com aprovação do Bruno)
 

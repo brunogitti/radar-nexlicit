@@ -14,6 +14,10 @@ on:
         description: "Permite publicar um banco com MENOS editais que o da branch data. So para uma reducao feita de proposito. Nunca libera banco vazio."
         type: boolean
         default: false
+      reprocessar_itens_truncados:
+        description: "Busca de novo os itens dos editais ABERTOS que ficaram com exatamente 10 itens (ou nenhum) e grava no banco. So para rodar uma vez, a mao. Nao reclassifica nada. Deixe desligado no uso normal."
+        type: boolean
+        default: false
 
 # Uma execucao por vez, sempre. Se uma execucao manual coincidir com a
 # agendada, a segunda ESPERA a primeira terminar (cancel-in-progress: false
@@ -54,6 +58,16 @@ jobs:
         env:
           PERMITIR_INICIO_DO_ZERO: ${{ inputs.permitir_inicio_do_zero }}
         run: bash .github/scripts/restaurar_banco.sh
+
+      # So roda quando alguem liga o input reprocessar_itens_truncados no
+      # disparo manual (nas execucoes agendadas fica desligado). Vem DEPOIS
+      # de restaurar (o banco ja foi conferido) e ANTES da captura. O backup
+      # do banco anterior sai da copia feita na restauracao, entao ele nao
+      # inclui estes itens novos. Nao muda segmento nem envia e-mail. Se der
+      # erro de rede num edital, ele so fica sem itens novos (nada se perde).
+      - name: Reprocessar itens truncados (so se o input estiver ligado)
+        if: ${{ inputs.reprocessar_itens_truncados }}
+        run: python scripts/reprocessar_itens_truncados.py --banco dados/radar.db --gravar
 
       - name: Rodar os testes automatizados
         run: python -m pytest tests/ -q
