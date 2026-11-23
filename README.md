@@ -84,7 +84,7 @@ python -m pytest tests/ -v
 
 ## Automação (GitHub Actions)
 
-`.github/workflows/captura-diaria.yml` roda todo dia às 7h e às 13h (horário de Brasília), ou manualmente via `gh workflow run captura-diaria.yml`. Cada execução: restaura o banco salvo na branch `data`, roda a suíte de testes automatizados (só segue adiante se passar), captura e filtra os editais dos 143 municípios, envia o e-mail com o que é novo, e publica o banco atualizado de volta na branch `data`.
+`.github/workflows/captura-diaria.yml` é disparado todo dia às 7h07 e às 13h07 (horário de Brasília) por um agendador externo gratuito, com o `agendador.yml` de 2 em 2 horas como rede de segurança (detalhes em `docs/operacao-agendamento.md`), ou manualmente via `gh workflow run captura-diaria.yml`. Cada execução: restaura o banco salvo na branch `data`, roda a suíte de testes automatizados (só segue adiante se passar), captura e filtra os editais dos 143 municípios, envia o e-mail com o que é novo, e publica o banco atualizado de volta na branch `data`.
 
 ## Stack
 

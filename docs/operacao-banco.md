@@ -4,7 +4,7 @@ Este documento explica como o banco `dados/radar.db` é guardado entre uma execu
 
 ## Como funciona
 
-O workflow roda duas vezes por dia (7h e 13h, horário de Brasília) e, em cada execução:
+O workflow é disparado duas vezes por dia (7h07 e 13h07, horário de Brasília, veja `docs/operacao-agendamento.md`) e, em cada execução:
 
 1. **Restaura** o banco da branch `data` (script `.github/scripts/restaurar_banco.sh`).
 2. Roda os testes, captura os editais e envia o e-mail.
