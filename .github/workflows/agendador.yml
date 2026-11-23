@@ -44,6 +44,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           IGNORAR_TRAVA: ${{ inputs.ignorar_trava }}
+          # Limite em horas, guardado numa variavel do repositorio (Settings >
+          # Secrets and variables > Actions > Variables) para mudar sem editar
+          # codigo. Se a variavel nao existir, o valor chega vazio e o script usa 5.
+          HORAS_MINIMAS_ENTRE_CAPTURAS: ${{ vars.HORAS_MINIMAS_ENTRE_CAPTURAS }}
         run: bash .github/scripts/decidir_agendamento.sh
 
       - name: Disparar a captura

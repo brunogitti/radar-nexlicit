@@ -29,7 +29,7 @@ Tudo isto é feito por você, no navegador e no seu terminal. O token nunca deve
 
 1. GitHub, foto do perfil, **Settings**, **Developer settings**, **Personal access tokens**, **Fine-grained tokens**, **Generate new token**.
 2. **Token name:** `radar-nexlicit-agendador`.
-3. **Expiration:** escolha **90 dias** (data personalizada). Anote a data de vencimento.
+3. **Expiration:** escolha **1 ano** (365 dias, ou a data personalizada equivalente). Anote a data de vencimento.
 4. **Resource owner:** a sua conta.
 5. **Repository access:** **Only select repositories**, e marque **somente** `radar-nexlicit`.
 6. **Permissions, Repository permissions:** **Actions: Read and write**. Deixe todas as outras em "No access". (O GitHub adiciona "Metadata: Read-only" sozinho, é obrigatório e inofensivo.)
@@ -63,19 +63,25 @@ Crie uma conta gratuita em cron-job.org e um job por horário (um às 7h07 e out
 - **URL:** `https://api.github.com/repos/brunogitti/radar-nexlicit/actions/workflows/captura-diaria.yml/dispatches`
 - **Método:** `POST`
 - **Corpo (body):** `{"ref":"master"}`
-- **Cabeçalhos (headers):**
-  - `Accept: application/vnd.github+json`
-  - `Authorization: Bearer <cole o token aqui, só neste campo>`
-  - `X-GitHub-Api-Version: 2022-11-28`
-  - `Content-Type: application/json`
+- **Cabeçalhos (headers) que a API do GitHub exige ou recomenda:**
+
+| Cabeçalho | Valor | Para quê |
+|---|---|---|
+| `User-Agent` | um nome qualquer, ex.: `radar-nexlicit-agendador` | **Obrigatório.** A API do GitHub recusa (403) pedido sem `User-Agent`. |
+| `Accept` | `application/vnd.github+json` | Pede a resposta no formato oficial da API. |
+| `X-GitHub-Api-Version` | `2022-11-28` | Fixa a versão da API, para uma mudança futura não quebrar o job. |
+| `Authorization` | `Bearer <cole o token aqui, só neste campo>` | Prova quem está chamando. É o único lugar onde o token fica. |
+| `Content-Type` | `application/json` | Avisa que o corpo é JSON. |
+
+- **Resposta esperada:** **HTTP 204** (sem corpo). Qualquer 2xx quer dizer que o GitHub aceitou e uma captura vai começar em segundos. 401/403 = token errado, vencido ou sem a permissão Actions (ou faltou o `User-Agent`). 404 = o token não enxerga o repositório. 422 = o `ref` do corpo não existe (confira `master`).
 - **Horário:** 07:07 e 13:07, fuso **America/Sao_Paulo**.
-- **Aviso em caso de falha:** ligue a notificação por e-mail do próprio agendador para respostas fora de 2xx.
+- **Notificação de falha por e-mail:** ligue no próprio agendador o aviso por e-mail para qualquer resposta fora de 2xx (no cron-job.org: opção de notificar quando o job falhar; confira o nome exato da opção na tela). Sem isso, um token vencido só seria percebido pela falta do e-mail "Radar ativo" ou de captura.
 
 **Confira no agendador antes de confiar nele** (não consegui verificar na página oficial do serviço, só em fontes de terceiros):
 
 1. O plano **gratuito** aceita método **POST** com **cabeçalho personalizado** e **corpo JSON**?
 2. O fuso **America/Sao_Paulo** existe nas opções e os horários aparecem como 07:07 e 13:07? (O Brasil não tem horário de verão desde 2019, então se o fuso não existir, dá para usar 10:07 e 16:07 em UTC.)
-3. O agendador manda o cabeçalho `User-Agent`? A API do GitHub exige um. Se o agendador ignorar o cabeçalho e mandar o dele, tudo bem; se o teste do passo 4 devolver 403, é por aqui que se investiga.
+3. O agendador deixa você definir o cabeçalho `User-Agent`? A API do GitHub exige um. Se o agendador mandar o dele no lugar do seu, tudo bem; se o teste do passo 4 devolver 403, é por aqui que se investiga.
 4. Existe limite de execuções ou de tamanho de resposta no plano gratuito que atrapalhe 2 chamadas por dia?
 
 ### 4. Testar pelo agendador
@@ -86,10 +92,10 @@ Crie uma conta gratuita em cron-job.org e um job por horário (um às 7h07 e out
 
 ### 5. Aviso de renovação do token
 
-O token vence na data escolhida (90 dias). Três proteções:
+O token vence na data escolhida (1 ano). Três proteções:
 
 1. O GitHub costuma avisar por e-mail antes de um token vencer. Confirme em Settings, Notifications que e-mails de segurança estão ligados, mas **não dependa só disso**.
-2. **Lembrete no calendário** 10 dias antes do vencimento: "Renovar token do agendador do Radar". Crie assim que tiver a data.
+2. **Lembrete no calendário** 30 dias antes do vencimento: "Renovar token do agendador do Radar". Crie assim que tiver a data.
 3. A rede de segurança B continua rodando de 2 em 2 horas. Se o token vencer, o disparo externo falha (e o agendador avisa por e-mail), mas o Radar continua capturando. O que se perde é só a pontualidade das 7h07 e 13h07.
 
 **Renovar:** gere um token novo com as mesmas configurações (ou use "Regenerate token" na página do token), troque o valor do cabeçalho `Authorization` nos dois jobs, teste (passo 4) e só então revogue o token antigo. Anote a nova data de vencimento e atualize o lembrete.
@@ -112,3 +118,16 @@ gh run list --workflow captura-diaria.yml --limit 30 --json createdAt,event -q '
 ## Testar o Agendador (B) sem esperar
 
 Depois que o `agendador.yml` estiver na `master`: `gh workflow run agendador.yml` roda a decisão com a trava normal (se houve captura há menos de 5 horas, termina pulando e nada é disparado). Com `-f ignorar_trava=true` ele dispara uma captura de verdade, útil para provar o caminho completo.
+
+## Limite de horas do Agendador (B)
+
+O limite (padrão 5 horas) fica numa variável do repositório chamada `HORAS_MINIMAS_ENTRE_CAPTURAS` (Settings, Secrets and variables, Actions, aba Variables). Mudar o valor lá vale na próxima rodada, sem editar código. Variável ausente ou vazia significa 5.
+
+Quantas capturas por dia, com o disparo externo (A) às 7h07 e 13h07 e tudo no horário (estimativa, sem contar o atraso do próprio GitHub no agendamento do B, que existe):
+
+| Limite do B | Capturas do A | Capturas extras do B | Total por dia | Maior pausa normal |
+|---|---|---|---|---|
+| 5 h | 2 | cerca de 2 (por volta de 19h37 e 1h37) | cerca de 4 | cerca de 6 h |
+| 20 h | 2 | 0 enquanto o A funciona | 2 | cerca de 18 h (13h07 até 7h07) |
+
+Com 5 h o B funciona como um segundo e terceiro horário "de graça", preenchendo a madrugada. Com 20 h ele só age se o A falhar (a espera máxima entre publicações com o A funcionando é de cerca de 18 h; o limite precisa ser maior que isso).
