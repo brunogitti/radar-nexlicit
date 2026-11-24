@@ -440,17 +440,14 @@ def consultar_execucoes_desde(conexao, desde):
     return [dict(linha) for linha in cursor.fetchall()]
 
 
-def contar_editais_abertos(conexao, agora):
-    """Quantos editais estao valendo agora: situacao "Divulgada no PNCP",
-    nao excluidos e com prazo depois de `agora` (horario de Brasilia)."""
-    linha = conexao.execute(
-        """
-        SELECT COUNT(*) AS total FROM editais
-        WHERE situacao = ? AND excluido_em IS NULL AND data_encerramento_proposta > ?
-        """,
-        (SITUACAO_DIVULGADA, agora.isoformat()),
-    ).fetchone()
-    return linha["total"]
+def consultar_primeira_execucao(conexao):
+    """Devolve (datetime) o horario da execucao mais antiga registrada, ou
+    None se a tabela execucoes ainda esta vazia. Serve pra saber desde
+    quando existem dados (o e-mail semanal avisa quando ha menos de 7 dias)."""
+    linha = conexao.execute("SELECT MIN(executada_em) AS primeira FROM execucoes").fetchone()
+    if linha["primeira"] is None:
+        return None
+    return datetime.fromisoformat(linha["primeira"])
 
 
 def contar_editais_vistos_desde(conexao, desde):
