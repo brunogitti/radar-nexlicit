@@ -18,6 +18,11 @@ from .relogio import agora_em_brasilia
 logger = logging.getLogger(__name__)
 
 URL_CONTRATACOES_PROPOSTA = "https://pncp.gov.br/api/consulta/v1/contratacoes/proposta"
+# Consulta de UMA compra. Testado de verdade em 23/11/2026: 200 com os dados
+# da compra, 410 quando o PNCP excluiu o edital ("A contratacao informada foi
+# excluida e nao pode ser consultada."). O 410 NAO consta no Swagger. Cuidado:
+# o mesmo caminho sob /api/pncp/v1/... responde 301, so este de consulta vale.
+URL_CONSULTA_DA_COMPRA = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}"
 URL_ITENS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens"
 URL_ARQUIVOS_DA_COMPRA = "https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/arquivos"
 
@@ -393,3 +398,56 @@ def buscar_arquivos_da_compra(cnpj, ano, sequencial):
         }
         for documento in documentos_crus
     ]
+
+
+def consultar_compra(cnpj, ano, sequencial):
+    """Pergunta ao PNCP qual e a situacao de UMA compra especifica.
+
+    Serve pra descobrir o que aconteceu com um edital que sumiu da lista de
+    propostas em aberto. Devolve:
+
+      - {"excluida": True}: o PNCP respondeu 410, o edital foi excluido;
+      - {"excluida": False, "situacao_id": 4, "situacao_nome": "Suspensa"}:
+        a compra existe e esta nessa situacao (inclusive "Divulgada no
+        PNCP", se ela so ficou fora da lista por outro motivo);
+      - None: nao foi possivel saber agora (falha de rede, 5xx depois das
+        tentativas, resposta sem situacao). Mesma convencao do resto do
+        projeto: None e "nao consegui", nunca "esta tudo bem".
+
+    O 410 chega aqui como HTTPError: _fazer_requisicao nao tenta de novo em
+    erro que nao e de rede/servidor, e levanta o erro pra quem chamou.
+    """
+    identificador = f"{cnpj}/{ano}/{sequencial}"
+    url = URL_CONSULTA_DA_COMPRA.format(cnpj=cnpj, ano=ano, sequencial=sequencial)
+
+    try:
+        resposta = _fazer_requisicao(url, params=None)
+    except requests.exceptions.HTTPError as erro:
+        if erro.response is not None and erro.response.status_code == 410:
+            return {"excluida": True}
+        logger.warning("Nao consegui consultar a compra %s: %s", identificador, erro)
+        return None
+    except RuntimeError as erro:
+        logger.warning("Nao consegui consultar a compra %s: %s", identificador, erro)
+        return None
+
+    if resposta.status_code == 204:
+        logger.warning("Compra %s: o PNCP respondeu 204 (sem corpo), nao sei a situacao", identificador)
+        return None
+
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        logger.warning("Compra %s: resposta que nao e JSON, nao sei a situacao", identificador)
+        return None
+
+    situacao_nome = corpo.get("situacaoCompraNome")
+    if not situacao_nome:
+        logger.warning("Compra %s: resposta sem situacaoCompraNome, nao sei a situacao", identificador)
+        return None
+
+    return {
+        "excluida": False,
+        "situacao_id": corpo.get("situacaoCompraId"),
+        "situacao_nome": situacao_nome,
+    }

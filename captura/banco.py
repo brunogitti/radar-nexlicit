@@ -17,6 +17,10 @@ from pathlib import Path
 
 CAMINHO_BANCO_PADRAO = "dados/radar.db"
 
+# Texto que o PNCP usa na situacao de um edital normal, em aberto. Qualquer
+# outra situacao (Suspensa, Revogada, Anulada...) o painel mostra num selo.
+SITUACAO_DIVULGADA = "Divulgada no PNCP"
+
 # So esses tres campos contam como "mudanca relevante" pra reaparecer como
 # atualizado. objeto/orgao/etc quase nunca mudam depois de publicados;
 # prazo, situacao e valor sao os que realmente importam acompanhar.
@@ -137,8 +141,29 @@ def conectar(caminho=CAMINHO_BANCO_PADRAO):
     conexao.row_factory = sqlite3.Row
     conexao.execute(CRIAR_TABELA_SQL)
     conexao.execute(CRIAR_TABELA_ITENS_SQL)
+    _garantir_coluna_excluido_em(conexao)
     conexao.commit()
     return conexao
+
+
+def _garantir_coluna_excluido_em(conexao):
+    """Adiciona a coluna excluido_em na tabela editais se ela ainda nao
+    existir (banco criado antes desta coluna). Pode rodar quantas vezes
+    quiser: so mexe no banco na primeira.
+
+    Por que checar antes: ALTER TABLE ... ADD COLUMN da erro se a coluna ja
+    existe, e o SQLite nao tem "ADD COLUMN IF NOT EXISTS". Entao a gente
+    pergunta ao proprio banco quais colunas a tabela tem (PRAGMA
+    table_info) e so adiciona se faltar.
+
+    excluido_em guarda QUANDO o Radar descobriu que o PNCP excluiu o edital
+    (resposta 410). Vazio (NULL) = edital normal. Nunca apagamos a linha:
+    a conferencia de publicacao do banco exige que a contagem de editais
+    nao diminua, e o historico continua valendo.
+    """
+    colunas = [linha["name"] for linha in conexao.execute("PRAGMA table_info(editais)")]
+    if "excluido_em" not in colunas:
+        conexao.execute("ALTER TABLE editais ADD COLUMN excluido_em TEXT")
 
 
 def _buscar_edital_salvo(conexao, numero_controle_pncp):
@@ -222,7 +247,7 @@ def salvar(conexao, editais_classificados):
     conexao.commit()
 
 
-def consultar_historico(conexao, dias=None):
+def consultar_historico(conexao, dias=None, incluir_excluidos=False):
     """Devolve tudo que ja passou pelo Radar (nao so o que esta aberto
     agora), visto pela primeira vez nos ultimos `dias` dias (ou todo o
     historico, se dias for None), do mais recente pro mais antigo.
@@ -235,14 +260,22 @@ def consultar_historico(conexao, dias=None):
 
     segmentos e beneficios_itens voltam decodificados (lista/None), nao
     como o texto JSON cru que fica guardado no banco.
+
+    Editais que o PNCP excluiu (coluna excluido_em preenchida) ficam de
+    fora, a menos que incluir_excluidos=True.
     """
+    condicoes = []
+    parametros = []
     if dias is not None:
-        limite = (datetime.now() - timedelta(days=dias)).isoformat()
-        cursor = conexao.execute(
-            "SELECT * FROM editais WHERE visto_em >= ? ORDER BY visto_em DESC", (limite,)
-        )
-    else:
-        cursor = conexao.execute("SELECT * FROM editais ORDER BY visto_em DESC")
+        condicoes.append("visto_em >= ?")
+        parametros.append((datetime.now() - timedelta(days=dias)).isoformat())
+    if not incluir_excluidos:
+        condicoes.append("excluido_em IS NULL")
+
+    filtro_sql = f"WHERE {' AND '.join(condicoes)}" if condicoes else ""
+    cursor = conexao.execute(
+        f"SELECT * FROM editais {filtro_sql} ORDER BY visto_em DESC", parametros
+    )
 
     linhas = []
     for linha in cursor.fetchall():
@@ -266,6 +299,61 @@ def atualizar_segmentos(conexao, numero_controle_pncp, novos_segmentos):
     conexao.execute(
         "UPDATE editais SET segmentos = ?, atualizado_em = ? WHERE numero_controle_pncp = ?",
         (json.dumps(novos_segmentos, ensure_ascii=False), datetime.now().isoformat(), numero_controle_pncp),
+    )
+    conexao.commit()
+
+
+def buscar_abertos_fora_da_lista(conexao, agora, limite, numeros_na_lista):
+    """Devolve os editais do banco que o Radar ainda considera abertos mas
+    que NAO vieram na lista desta captura: candidatos a terem sido
+    excluidos, suspensos, revogados ou anulados no PNCP.
+
+    Entra quem:
+      - nao tem excluido_em (ainda nao sabemos que foi excluido);
+      - tem prazo depois de `agora` (ainda nao encerrou) e ate `limite`
+        (o fim da janela de dias que a captura pediu: um edital com prazo
+        alem disso nem poderia aparecer na lista, entao a ausencia dele
+        nao quer dizer nada);
+      - nao esta em `numeros_na_lista` (conjunto de numero_controle_pncp
+        que vieram na captura).
+
+    `agora` e `limite` sao datetime em horario de Brasilia, porque o prazo
+    guardado e em Brasilia (ver captura/relogio.py). Cada edital volta como
+    dicionario com numero_controle_pncp, link_pncp, municipio e situacao.
+    """
+    cursor = conexao.execute(
+        """
+        SELECT numero_controle_pncp, link_pncp, municipio, situacao
+        FROM editais
+        WHERE excluido_em IS NULL
+          AND data_encerramento_proposta > ?
+          AND data_encerramento_proposta <= ?
+        ORDER BY data_encerramento_proposta
+        """,
+        (agora.isoformat(), limite.isoformat()),
+    )
+    return [dict(linha) for linha in cursor.fetchall() if linha["numero_controle_pncp"] not in numeros_na_lista]
+
+
+def marcar_excluido(conexao, numero_controle_pncp, quando):
+    """Registra que o PNCP excluiu este edital (resposta 410). NAO apaga a
+    linha, so preenche excluido_em. `quando` e um datetime (o carimbo de
+    registro, mesmo relogio de visto_em e atualizado_em)."""
+    conexao.execute(
+        "UPDATE editais SET excluido_em = ?, atualizado_em = ? WHERE numero_controle_pncp = ?",
+        (quando.isoformat(), quando.isoformat(), numero_controle_pncp),
+    )
+    conexao.commit()
+
+
+def atualizar_situacao(conexao, numero_controle_pncp, situacao, quando):
+    """Corrige so a coluna situacao (e atualizado_em) de um edital que
+    ja existe, quando o PNCP passou a informar outra (ex.: Suspensa).
+    Se o edital voltar a ser "Divulgada no PNCP", a captura normal o
+    reconhece como atualizado e grava de volta."""
+    conexao.execute(
+        "UPDATE editais SET situacao = ?, atualizado_em = ? WHERE numero_controle_pncp = ?",
+        (situacao, quando.isoformat(), numero_controle_pncp),
     )
     conexao.commit()
 

@@ -54,3 +54,15 @@ Sobre os itens, que não estão no Swagger:
 - **Painel:** deixar de filtrar só pelo prazo da proposta. Edital excluído (e, a avaliar, anulado ou suspenso) não pode aparecer como aberto.
 - **Motivo:** o edital 46599833000111-1-000218/2026 foi excluído pelo órgão depois de o Radar capturá-lo. Hoje ele continua no banco como "Divulgada no PNCP" e aparece como aberto no painel até 02/12/2026, porque o Radar não percebe quando um edital deixa de aparecer na lista de propostas abertas.
 - **Hospedagem:** decidir se o repositório continua público ou vira privado, considerando a cota de minutos do GitHub Actions e o acesso do painel no Streamlit Community Cloud.
+
+## 5. Fuso e edital excluído (implementado em 23 e 24/11/2026)
+
+**Fuso do prazo.** `dataEncerramentoProposta` vem em horário de Brasília, sem marcação de fuso (conferido no portal do PNCP com o edital 49576416000141/2026/359: API 09:00, portal 09:00). O código passou a comparar o prazo com `captura/relogio.py` (`agora_em_brasilia`, `hoje_em_brasilia`, `dias_ate_o_prazo`), não com `datetime.now()`, porque o relógio do GitHub Actions e do Streamlit Cloud é UTC. Os carimbos `visto_em` e `atualizado_em` continuam com o relógio de onde a captura rodou, para não criar um salto de 3 horas no histórico. `tzdata` está fixado no `requirements.txt` porque o Windows não traz o banco de fusos.
+
+**Edital excluído e situação diferente de "Divulgada".**
+- URL que revela o estado de uma compra: `GET https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}`. 200 com `situacaoCompraNome`, ou 410 quando o PNCP excluiu o edital. O 410 não consta no Swagger, só existe testando. O mesmo caminho em `/api/pncp/v1/` responde 301.
+- Medido em 23/11/2026 nos 74 editais abertos do banco: 72 normais, 1 excluído (410) e 1 suspenso (`situacaoCompraId` 4, "Suspensa"). A lista `/proposta` ainda devolve o suspenso, mas o cliente descarta tudo que não é "Divulgada", então o banco nunca percebia a mudança. Os nomes de revogada e anulada não aparecem no Swagger nem em nenhuma amostra, por isso o código grava o texto que a API devolve e nunca compara com números de código.
+- Coluna `excluido_em` em `editais`, criada por `ALTER TABLE` idempotente em `banco.conectar`. A linha nunca é apagada (a conferência de publicação exige contagem maior ou igual).
+- Reconciliação (`main.reconciliar_editais_sumidos`): depois de salvar, consulta uma vez cada edital do banco que ainda parece aberto (prazo entre agora e o fim da janela de dias, sem `excluido_em`) e que não veio na lista. 410 grava `excluido_em`; outra situação grava a situação nova; "Divulgada" não muda nada; falha de consulta não muda nada. Não roda com `--municipio` nem com `--dry-run`, e um erro inesperado nela não derruba a captura.
+- Painel: editais com `excluido_em` ficam de fora de tudo (contagens e lista). Situação diferente de "Divulgada" aparece num selo no card e o edital não conta como "Encerra em breve".
+- Limite conhecido: um edital já enviado por e-mail não pode ser "retirado" depois, e o aviso de que ele foi suspenso ou excluído aparece só no painel.

@@ -19,7 +19,7 @@ import argparse
 import csv
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from captura import banco, filtro, pncp_client
 from captura.apresentacao import formatar_selo_me_epp, formatar_status, formatar_valor
@@ -97,6 +97,76 @@ def capturar_editais(municipios, dias):
         )
 
     return todos_os_editais
+
+
+def reconciliar_editais_sumidos(conexao, editais_da_lista, dias):
+    """Confere o que aconteceu com os editais que o banco ainda tem como
+    abertos mas que NAO vieram na lista desta captura.
+
+    Por que existe: o Radar so olha a lista de "propostas em aberto" de
+    hoje. Se um edital e excluido, suspenso, revogado ou anulado no PNCP,
+    ele simplesmente deixa de aparecer na lista, e o banco continuaria
+    mostrando como aberto ate o prazo passar (aconteceu com o edital
+    218/2026 de Valentim Gentil, excluido, e o 68/2026 de Floreal,
+    suspenso).
+
+    Para cada edital sumido, pergunta ao PNCP a situacao dele (so UMA
+    chamada por edital sumido, nao por edital do banco):
+      - 410 (excluido): grava excluido_em. O painel esconde, a linha fica.
+      - outra situacao (Suspensa, Revogada, Anulada...): grava a situacao
+        nova. O painel mostra o selo, o edital continua visivel.
+      - "Divulgada no PNCP": nao mexe (so ficou fora da lista por outro
+        motivo, por exemplo um municipio que falhou nesta captura).
+      - falha ao consultar: nao mexe em nada, tenta de novo na proxima.
+
+    editais_da_lista sao TODOS os editais que a captura trouxe, antes do
+    filtro de palavra-chave. Devolve um dicionario com a contagem de cada
+    desfecho, so para o log e para os testes.
+    """
+    agora = agora_em_brasilia()  # o prazo guardado e em horario de Brasilia
+    limite = agora + timedelta(days=dias)
+    numeros_na_lista = {edital.numero_controle_pncp for edital in editais_da_lista}
+    sumidos = banco.buscar_abertos_fora_da_lista(conexao, agora, limite, numeros_na_lista)
+
+    resumo = {"consultados": 0, "excluidos": 0, "situacao_mudou": 0, "sem_mudanca": 0, "falhas": 0}
+
+    for indice, edital in enumerate(sumidos):
+        if indice > 0:
+            time.sleep(pncp_client.PAUSA_ENTRE_CHAMADAS_SEGUNDOS)
+
+        cnpj, ano, sequencial = pncp_client.extrair_cnpj_ano_sequencial(edital["link_pncp"])
+        resultado = pncp_client.consultar_compra(cnpj, ano, sequencial)
+        resumo["consultados"] += 1
+
+        if resultado is None:
+            resumo["falhas"] += 1
+        elif resultado["excluida"]:
+            banco.marcar_excluido(conexao, edital["numero_controle_pncp"], datetime.now())
+            resumo["excluidos"] += 1
+            logger.info(
+                "Edital %s (%s) foi excluido no PNCP, marcado como excluido",
+                edital["numero_controle_pncp"], edital["municipio"],
+            )
+        elif resultado["situacao_nome"] != edital["situacao"]:
+            banco.atualizar_situacao(
+                conexao, edital["numero_controle_pncp"], resultado["situacao_nome"], datetime.now()
+            )
+            resumo["situacao_mudou"] += 1
+            logger.info(
+                "Edital %s (%s): situacao mudou de '%s' para '%s'",
+                edital["numero_controle_pncp"], edital["municipio"],
+                edital["situacao"], resultado["situacao_nome"],
+            )
+        else:
+            resumo["sem_mudanca"] += 1
+
+    logger.info(
+        "Reconciliacao: %s edital(is) do banco fora da lista de hoje, %s excluido(s), "
+        "%s com situacao nova, %s sem mudanca, %s falha(s) ao consultar",
+        resumo["consultados"], resumo["excluidos"], resumo["situacao_mudou"],
+        resumo["sem_mudanca"], resumo["falhas"],
+    )
+    return resumo
 
 
 def aplicar_filtro_de_palavras_chave(editais, config, filtro_segmento=None):
@@ -322,6 +392,16 @@ def main():
         # usa a lista COMPLETA (com os "sem mudanca"), pra recuperar os itens
         # de editais que ficaram sem nenhum por falha na busca anterior
         salvar_itens_dos_editais(conexao_banco, todos_classificados)
+
+        # So numa captura completa: com --municipio a lista traz so um
+        # municipio, e todos os outros editais do banco pareceriam "sumidos".
+        # O try existe porque isto e um extra: se der erro inesperado aqui,
+        # a captura e o e-mail (o que importa) seguem normalmente.
+        if not argumentos.municipio:
+            try:
+                reconciliar_editais_sumidos(conexao_banco, editais_brutos, argumentos.dias)
+            except Exception as erro:
+                logger.error("Falhei na reconciliacao dos editais sumidos, sigo sem ela: %s", erro)
 
     if argumentos.enviar_email and not argumentos.dry_run:
         # so entra no e-mail quem e novo/atualizado, mesmo que --incluir-vistos

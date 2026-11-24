@@ -484,3 +484,86 @@ def test_data_final_da_janela_usa_a_data_de_brasilia(monkeypatch):
     pncp_client.buscar_contratacoes_com_proposta_aberta("1", dias_janela=30)
 
     assert parametros_enviados[0]["dataFinal"] == "20261223"
+
+
+# ---------------------------------------------------------------------------
+# consultar_compra: situacao de UMA compra (200, 410 excluida, falhas)
+# ---------------------------------------------------------------------------
+
+
+def _erro_http(status_code):
+    """HTTPError como o requests levanta de verdade, com .response."""
+    resposta = _RespostaFalsa(status_code)
+    return requests.exceptions.HTTPError(f"status {status_code}", response=resposta)
+
+
+def test_consultar_compra_200_devolve_a_situacao(monkeypatch):
+    corpo = {"situacaoCompraId": 4, "situacaoCompraNome": "Suspensa"}
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", lambda url, params: _RespostaFalsa(200, corpo))
+
+    resultado = pncp_client.consultar_compra("53221941000111", 2026, 68)
+
+    assert resultado == {"excluida": False, "situacao_id": 4, "situacao_nome": "Suspensa"}
+
+
+def test_consultar_compra_divulgada_tambem_devolve_a_situacao(monkeypatch):
+    corpo = {"situacaoCompraId": 1, "situacaoCompraNome": "Divulgada no PNCP"}
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", lambda url, params: _RespostaFalsa(200, corpo))
+
+    resultado = pncp_client.consultar_compra("49576416000141", 2026, 359)
+
+    assert resultado["excluida"] is False
+    assert resultado["situacao_nome"] == "Divulgada no PNCP"
+
+
+def test_consultar_compra_410_devolve_excluida(monkeypatch):
+    def requisicao_que_da_410(url, params):
+        raise _erro_http(410)
+
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", requisicao_que_da_410)
+
+    assert pncp_client.consultar_compra("46599833000111", 2026, 218) == {"excluida": True}
+
+
+def test_consultar_compra_usa_a_url_de_consulta_com_cnpj_ano_e_sequencial(monkeypatch):
+    urls = []
+
+    def requisicao(url, params):
+        urls.append(url)
+        return _RespostaFalsa(200, {"situacaoCompraId": 1, "situacaoCompraNome": "Divulgada no PNCP"})
+
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", requisicao)
+
+    pncp_client.consultar_compra("46599833000111", 2026, 218)
+
+    assert urls == ["https://pncp.gov.br/api/consulta/v1/orgaos/46599833000111/compras/2026/218"]
+
+
+def test_consultar_compra_outro_erro_http_devolve_none(monkeypatch):
+    def requisicao(url, params):
+        raise _erro_http(404)
+
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", requisicao)
+
+    assert pncp_client.consultar_compra("1", 2026, 1) is None
+
+
+def test_consultar_compra_falha_de_rede_depois_das_tentativas_devolve_none(monkeypatch):
+    def requisicao(url, params):
+        raise RuntimeError("Falhou depois de 5 tentativas")
+
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", requisicao)
+
+    assert pncp_client.consultar_compra("1", 2026, 1) is None
+
+
+def test_consultar_compra_resposta_sem_situacao_devolve_none(monkeypatch):
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", lambda url, params: _RespostaFalsa(200, {"x": 1}))
+
+    assert pncp_client.consultar_compra("1", 2026, 1) is None
+
+
+def test_consultar_compra_204_devolve_none(monkeypatch):
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", lambda url, params: _RespostaFalsa(204))
+
+    assert pncp_client.consultar_compra("1", 2026, 1) is None

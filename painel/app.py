@@ -36,6 +36,7 @@ COR_INK = "#12233D"
 COR_PAPER = "#F1ECE0"
 COR_BRASS = "#A2782A"
 COR_CARD = "#FBF9F3"
+COR_ALERTA = "#8A2B2B"  # vinho: selo de situacao diferente de "Divulgada" (suspensa, revogada, anulada)
 
 # Simbolo oficial da NexLicit (quadrado navy com check dourado), o mesmo
 # usado como favicon do site institucional (nexlicit-landing.html). Nao
@@ -179,7 +180,7 @@ def _renderizar_resumo_executivo(editais):
     total = len(editais)
     urgentes = sum(
         1 for e in editais
-        if _eh_urgente(datetime.fromisoformat(e["data_encerramento_proposta"]))
+        if _edital_urgente(e)
     )
     # Fica com date.today() de proposito: "visto_em" e um carimbo gravado com
     # o relogio de onde a captura rodou (UTC no GitHub), e o painel tambem
@@ -395,6 +396,15 @@ def _eh_urgente(prazo):
     return 0 <= dias_restantes <= DIAS_LIMIAR_URGENTE
 
 
+def _edital_urgente(edital):
+    """True se o edital esta com prazo proximo E ainda esta valendo. Um
+    edital suspenso, revogado ou anulado nao e "urgente": nao ha proposta
+    a enviar, entao nao ganha o destaque de "Encerra em breve"."""
+    if edital["situacao"] != banco.SITUACAO_DIVULGADA:
+        return False
+    return _eh_urgente(datetime.fromisoformat(edital["data_encerramento_proposta"]))
+
+
 def _destacar_termos(texto, termos, min_radical, estilo="forte"):
     """Envolve em destaque cada palavra do texto original que bate com
     algum dos termos que fizeram esse edital entrar no segmento. Usa a
@@ -453,6 +463,15 @@ def _renderizar_badges(edital, urgente):
             f'<span style="background:{COR_BRASS}; color:{COR_PAPER}; padding:2px 10px; '
             f'border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:6px;">'
             f'{match["segmento"]}</span>'
+        )
+    if edital["situacao"] != banco.SITUACAO_DIVULGADA:
+        # Mostra a situacao que o PNCP informou (Suspensa, Revogada,
+        # Anulada...), ate o prazo passar. Vinho, nao dourado nem navy:
+        # e um aviso de que o edital nao esta valendo normalmente.
+        pedacos.append(
+            f'<span style="background:{COR_ALERTA}; color:{COR_PAPER}; padding:2px 10px; '
+            f'border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:6px;">'
+            f'{html.escape(edital["situacao"] or "Situação desconhecida")}</span>'
         )
     if _tem_selo_me_epp(edital["beneficios_itens"]):
         # title= vira um tooltip nativo do navegador ao passar o mouse,
@@ -689,7 +708,7 @@ def _renderizar_card(edital, min_radical):
     que aciona a borda de destaque em _aplicar_estilo_dos_cards).
     """
     prazo = datetime.fromisoformat(edital["data_encerramento_proposta"])
-    urgente = _eh_urgente(prazo)
+    urgente = _edital_urgente(edital)
     sufixo_chave = "_urgente" if urgente else ""
 
     with st.container(border=True, key=f"card_{edital['numero_controle_pncp']}{sufixo_chave}", gap=None):
