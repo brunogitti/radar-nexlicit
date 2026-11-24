@@ -13,6 +13,7 @@ from email.utils import parsedate_to_datetime
 import requests
 
 from .modelos import Edital
+from .relogio import agora_em_brasilia
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +215,10 @@ def buscar_contratacoes_com_proposta_aberta(codigo_municipio_ibge, dias_janela=9
     ou que ja tenha passado do prazo de encerramento (a API pode devolver
     editais anulados dentro da janela pedida, confirmado na Tarefa 1.0).
     """
-    data_final = (datetime.now() + timedelta(days=dias_janela)).strftime("%Y%m%d")
-    agora = datetime.now()
+    # Hora de Brasilia (e nao datetime.now()), porque o prazo vindo do PNCP
+    # e em Brasilia sem marca de fuso. Ver captura/relogio.py.
+    agora = agora_em_brasilia()
+    data_final = (agora + timedelta(days=dias_janela)).strftime("%Y%m%d")
 
     editais = []
     pagina = 1

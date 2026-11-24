@@ -3,6 +3,9 @@ PyYAML==6.0.3
 pytest==9.1.1
 python-dotenv==1.2.2
 streamlit==1.59.2
+# Banco de fusos horarios: o Windows nao traz um, e o zoneinfo precisa dele
+# pra entender "America/Sao_Paulo" (captura/relogio.py).
+tzdata==2026.3
 # Fixa o starlette (dependencia transitiva do streamlit, usada por baixo do
 # painel) numa versao anterior a 1.4.0. A partir da 1.4.0, GZipResponder
 # passou a exigir um parametro novo (thread_minimum_size) que o streamlit
