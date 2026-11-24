@@ -487,3 +487,112 @@ def test_salvar_de_novo_um_edital_excluido_nao_apaga_a_marca(tmp_path):
 
     linha = conexao.execute("SELECT excluido_em FROM editais WHERE numero_controle_pncp = 'A-1'").fetchone()
     assert linha["excluido_em"] == "2026-11-24T10:00:00"
+
+
+# ---------------------------------------------------------------------------
+# Tabelas metadados e execucoes (e-mail semanal "Radar ativo")
+# ---------------------------------------------------------------------------
+
+
+def _tabelas_do_banco(caminho):
+    conexao = sqlite3.connect(caminho)
+    tabelas = {linha[0] for linha in conexao.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    conexao.close()
+    return tabelas
+
+
+def test_banco_novo_tem_as_tabelas_metadados_e_execucoes(tmp_path):
+    caminho = str(tmp_path / "novo.db")
+    banco.conectar(caminho).close()
+
+    assert {"metadados", "execucoes"} <= _tabelas_do_banco(caminho)
+
+
+def test_banco_antigo_ganha_as_tabelas_novas_sem_perder_editais(tmp_path):
+    caminho = str(tmp_path / "antigo.db")
+    antigo = sqlite3.connect(caminho)
+    antigo.execute(banco.CRIAR_TABELA_SQL)
+    antigo.execute(
+        "INSERT INTO editais (numero_controle_pncp, situacao, visto_em, atualizado_em) "
+        "VALUES ('X-1', 'Divulgada no PNCP', '2026-11-01T10:00:00', '2026-11-01T10:00:00')"
+    )
+    antigo.commit()
+    antigo.close()
+    assert "metadados" not in _tabelas_do_banco(caminho)
+
+    conexao = banco.conectar(caminho)
+
+    assert {"metadados", "execucoes"} <= _tabelas_do_banco(caminho)
+    assert banco.contar_editais(caminho) == 1
+    conexao.close()
+
+
+def test_conectar_duas_vezes_nao_apaga_o_que_ja_foi_gravado(tmp_path):
+    caminho = str(tmp_path / "duas.db")
+    conexao = banco.conectar(caminho)
+    banco.gravar_metadado(conexao, "chave", "valor")
+    banco.registrar_execucao(conexao, datetime(2026, 11, 23, 7, 0), "completa", 143, 0, 330, 5)
+    conexao.close()
+
+    conexao = banco.conectar(caminho)
+
+    assert banco.ler_metadado(conexao, "chave") == "valor"
+    assert len(banco.consultar_execucoes_desde(conexao, datetime(2026, 1, 1))) == 1
+
+
+def test_ler_metadado_que_nunca_foi_gravado_devolve_none(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    assert banco.ler_metadado(conexao, "nao_existe") is None
+
+
+def test_gravar_metadado_e_ler_de_volta(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    banco.gravar_metadado(conexao, "batimento_enviado_em", "2026-11-23T06:00:00")
+
+    assert banco.ler_metadado(conexao, "batimento_enviado_em") == "2026-11-23T06:00:00"
+
+
+def test_gravar_metadado_de_novo_troca_o_valor_sem_duplicar(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    banco.gravar_metadado(conexao, "chave", "um")
+    banco.gravar_metadado(conexao, "chave", "dois")
+
+    assert banco.ler_metadado(conexao, "chave") == "dois"
+    assert conexao.execute("SELECT COUNT(*) FROM metadados").fetchone()[0] == 1
+
+
+def test_registrar_execucao_grava_todos_os_campos(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    banco.registrar_execucao(conexao, datetime(2026, 11, 23, 7, 7, 30), "com_falhas", 143, 3, 330, 5)
+
+    linha = banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 1))[0]
+    assert linha["executada_em"] == "2026-11-23T07:07:30"
+    assert linha["resultado"] == "com_falhas"
+    assert linha["municipios_consultados"] == 143
+    assert linha["municipios_com_falha"] == 3
+    assert linha["editais_na_lista"] == 330
+    assert linha["editais_novos_ou_atualizados"] == 5
+
+
+def test_consultar_execucoes_desde_filtra_e_ordena_da_mais_recente(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    for dia in (10, 20, 22):
+        banco.registrar_execucao(conexao, datetime(2026, 11, dia, 7, 0), "completa", 143, 0, 330, 0)
+
+    execucoes = banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 15))
+
+    assert [e["executada_em"] for e in execucoes] == ["2026-11-22T07:00:00", "2026-11-20T07:00:00"]
+
+
+def test_contar_editais_vistos_desde_ignora_excluidos_e_antigos(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+    _salvar_edital(conexao, "A-2")
+    banco.marcar_excluido(conexao, "A-2", datetime(2026, 11, 24, 10, 0))
+
+    assert banco.contar_editais_vistos_desde(conexao, datetime(2000, 1, 1)) == 1
+    assert banco.contar_editais_vistos_desde(conexao, datetime(2100, 1, 1)) == 0

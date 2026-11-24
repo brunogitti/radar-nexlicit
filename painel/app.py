@@ -61,6 +61,14 @@ st.set_page_config(page_title="Radar NexLicit", page_icon=_logo_svg(), layout="w
 # como "vencimento proximo" no card (ver _eh_urgente).
 DIAS_LIMIAR_URGENTE = 3
 
+# Texto da situacao de um edital normal, em aberto. Fica escrito aqui de
+# proposito, em vez de vir de captura/banco.py: no Streamlit Cloud, depois de
+# um deploy, o app.py e recarregado mas o modulo banco pode continuar na
+# versao antiga na memoria do processo (aconteceu em 24/11/2026, merge
+# 357eef7: AttributeError em banco.SITUACAO_DIVULGADA). Uma comparacao de
+# texto nao deve derrubar o painel inteiro. Se mudar aqui, mude la tambem.
+SITUACAO_DIVULGADA = "Divulgada no PNCP"
+
 
 def _formatar_valor_reais(valor):
     """Formata no padrao brasileiro (R$ 5.610,00), diferente do
@@ -90,7 +98,10 @@ def carregar_editais():
     conexao = banco.conectar()
     linhas = banco.consultar_historico(conexao)
     conexao.close()
-    return linhas
+    # Filtro duplicado de proposito: consultar_historico ja esconde os
+    # excluidos pelo PNCP, mas se o modulo banco estiver numa versao antiga
+    # na memoria (ver SITUACAO_DIVULGADA acima), ele nao esconderia.
+    return [linha for linha in linhas if not linha.get("excluido_em")]
 
 
 @st.cache_data(ttl=60)
@@ -400,7 +411,7 @@ def _edital_urgente(edital):
     """True se o edital esta com prazo proximo E ainda esta valendo. Um
     edital suspenso, revogado ou anulado nao e "urgente": nao ha proposta
     a enviar, entao nao ganha o destaque de "Encerra em breve"."""
-    if edital["situacao"] != banco.SITUACAO_DIVULGADA:
+    if edital["situacao"] != SITUACAO_DIVULGADA:
         return False
     return _eh_urgente(datetime.fromisoformat(edital["data_encerramento_proposta"]))
 
@@ -464,7 +475,7 @@ def _renderizar_badges(edital, urgente):
             f'border-radius:999px; font-size:0.75rem; font-weight:600; margin-right:6px;">'
             f'{match["segmento"]}</span>'
         )
-    if edital["situacao"] != banco.SITUACAO_DIVULGADA:
+    if edital["situacao"] != SITUACAO_DIVULGADA:
         # Mostra a situacao que o PNCP informou (Suspensa, Revogada,
         # Anulada...), ate o prazo passar. Vinho, nao dourado nem navy:
         # e um aviso de que o edital nao esta valendo normalmente.

@@ -25,7 +25,7 @@ from captura import banco, filtro, pncp_client
 from captura.apresentacao import formatar_selo_me_epp, formatar_status, formatar_valor
 from captura.normalizacao import normalizar_texto, termo_bate_no_texto
 from captura.relogio import agora_em_brasilia
-from entrega import email_sender, resumo
+from entrega import batimento, email_sender, resumo
 
 logger = logging.getLogger("main")
 
@@ -63,6 +63,9 @@ def capturar_editais(municipios, dias):
     """Busca os editais de cada municipio. Se um municipio falhar (depois
     das tentativas do pncp_client), registra o erro e segue para os
     proximos, em vez de derrubar a execucao inteira.
+
+    Devolve dois valores: a lista de editais e a lista (de textos
+    "Municipio/UF") dos municipios que falharam.
     """
     todos_os_editais = []
     municipios_com_falha = []
@@ -96,7 +99,52 @@ def capturar_editais(municipios, dias):
             len(municipios_com_falha), len(municipios), ", ".join(municipios_com_falha),
         )
 
-    return todos_os_editais
+    return todos_os_editais, municipios_com_falha
+
+
+def registrar_execucao_e_enviar_batimento(
+    conexao, destinatario, total_municipios, municipios_com_falha,
+    editais_na_lista, editais_novos_ou_atualizados,
+):
+    """Anota esta captura na tabela execucoes e, se for o dia certo (primeira
+    captura de segunda-feira a partir das 05h de Brasilia), manda o e-mail
+    semanal "Radar ativo" (ver entrega/batimento.py).
+
+    Captura em que TODOS os municipios falharam nao conta como captura (o
+    PNCP estava fora do ar): nao registra e nao manda batimento, e avisa no
+    log. Se o e-mail falhar, o envio nao e marcado como feito, entao a
+    proxima captura de segunda tenta de novo.
+    """
+    if total_municipios == 0:
+        return
+
+    if len(municipios_com_falha) >= total_municipios:
+        logger.error("Todos os %s municipios falharam, nao registro esta execucao", total_municipios)
+        return
+
+    agora = agora_em_brasilia()
+    resultado = "com_falhas" if municipios_com_falha else "completa"
+    banco.registrar_execucao(
+        conexao, agora, resultado, total_municipios, len(municipios_com_falha),
+        editais_na_lista, editais_novos_ou_atualizados,
+    )
+
+    if not destinatario:
+        return
+
+    ultimo_envio = banco.ler_metadado(conexao, batimento.CHAVE_ULTIMO_ENVIO)
+    if not batimento.deve_enviar(agora, ultimo_envio):
+        return
+
+    resumo_da_semana = batimento.montar_resumo(conexao, agora)
+    enviou = email_sender.enviar_email(
+        destinatario, batimento.montar_assunto(agora), batimento.montar_corpo_html(resumo_da_semana)
+    )
+    if enviou:
+        banco.gravar_metadado(conexao, batimento.CHAVE_ULTIMO_ENVIO, agora.isoformat())
+        logger.info("E-mail semanal 'Radar ativo' enviado")
+    else:
+        logger.error("Nao consegui enviar o e-mail semanal 'Radar ativo', tento na proxima captura")
 
 
 def reconciliar_editais_sumidos(conexao, editais_da_lista, dias):
@@ -359,7 +407,7 @@ def main():
 
     config_keywords = filtro.carregar_keywords(CAMINHO_KEYWORDS)
 
-    editais_brutos = capturar_editais(municipios, argumentos.dias)
+    editais_brutos, municipios_com_falha = capturar_editais(municipios, argumentos.dias)
     logger.info("%s edital(is) com proposta em aberto, antes do filtro de palavra-chave", len(editais_brutos))
 
     if argumentos.testar_termo:
@@ -414,6 +462,19 @@ def main():
             email_sender.enviar_email(argumentos.enviar_email, assunto, corpo_html)
         else:
             logger.info("Nenhum edital novo/atualizado, e-mail nao enviado")
+
+    # Registro da execucao e e-mail semanal: so numa captura completa e de
+    # verdade (nao em --dry-run, nao com --municipio). O try existe porque
+    # isto e um extra: erro aqui nao pode derrubar uma captura ja concluida.
+    if not argumentos.dry_run and not argumentos.municipio:
+        try:
+            novos_ou_atualizados = [item for item in todos_classificados if item[1] != "sem_mudanca"]
+            registrar_execucao_e_enviar_batimento(
+                conexao_banco, argumentos.enviar_email, len(municipios), municipios_com_falha,
+                len(editais_brutos), len(novos_ou_atualizados),
+            )
+        except Exception as erro:
+            logger.error("Falhei ao registrar a execucao ou enviar o batimento, sigo sem ele: %s", erro)
 
     conexao_banco.close()
 

@@ -105,6 +105,38 @@ CREATE TABLE IF NOT EXISTS itens_edital (
 )
 """
 
+# Guarda pequenos fatos soltos que nao pertencem a um edital, no formato
+# "chave = valor" (os dois em texto). Hoje so tem uma chave:
+# "batimento_enviado_em" (quando o e-mail semanal "Radar ativo" saiu pela
+# ultima vez, ver entrega/batimento.py). Fica no banco, e nao num arquivo,
+# porque o banco e a unica coisa que o workflow publica entre uma execucao e
+# outra (branch data).
+CRIAR_TABELA_METADADOS_SQL = """
+CREATE TABLE IF NOT EXISTS metadados (
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+)
+"""
+
+# Uma linha por captura completa que terminou (nao em --dry-run, nao com
+# --municipio). Serve ao e-mail semanal ("quantas capturas nos ultimos 7
+# dias") e ja adianta o registro de execucoes da coleta v2. executada_em e o
+# horario de Brasilia (isoformat) do FIM da captura. resultado:
+# "completa" (todos os municipios responderam) ou "com_falhas" (alguns
+# ficaram de fora). Captura em que TODOS os municipios falharam nao e
+# registrada: nao foi uma captura de verdade.
+CRIAR_TABELA_EXECUCOES_SQL = """
+CREATE TABLE IF NOT EXISTS execucoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    executada_em TEXT NOT NULL,
+    resultado TEXT NOT NULL,
+    municipios_consultados INTEGER NOT NULL,
+    municipios_com_falha INTEGER NOT NULL,
+    editais_na_lista INTEGER NOT NULL,
+    editais_novos_ou_atualizados INTEGER NOT NULL
+)
+"""
+
 SQL_UPSERT_ITEM = """
 INSERT INTO itens_edital (
     numero_controle_pncp, numero_item, descricao, material_ou_servico,
@@ -141,6 +173,8 @@ def conectar(caminho=CAMINHO_BANCO_PADRAO):
     conexao.row_factory = sqlite3.Row
     conexao.execute(CRIAR_TABELA_SQL)
     conexao.execute(CRIAR_TABELA_ITENS_SQL)
+    conexao.execute(CRIAR_TABELA_METADADOS_SQL)
+    conexao.execute(CRIAR_TABELA_EXECUCOES_SQL)
     _garantir_coluna_excluido_em(conexao)
     conexao.commit()
     return conexao
@@ -356,6 +390,77 @@ def atualizar_situacao(conexao, numero_controle_pncp, situacao, quando):
         (situacao, quando.isoformat(), numero_controle_pncp),
     )
     conexao.commit()
+
+
+def ler_metadado(conexao, chave):
+    """Devolve o valor guardado para a chave, ou None se nunca foi gravada."""
+    linha = conexao.execute("SELECT valor FROM metadados WHERE chave = ?", (chave,)).fetchone()
+    return linha["valor"] if linha is not None else None
+
+
+def gravar_metadado(conexao, chave, valor):
+    """Grava (ou troca) o valor de uma chave. E um upsert: se a chave ja
+    existe, atualiza em vez de dar erro de chave duplicada."""
+    conexao.execute(
+        "INSERT INTO metadados (chave, valor) VALUES (?, ?) "
+        "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+        (chave, valor),
+    )
+    conexao.commit()
+
+
+def registrar_execucao(
+    conexao, executada_em, resultado, municipios_consultados, municipios_com_falha,
+    editais_na_lista, editais_novos_ou_atualizados,
+):
+    """Acrescenta uma linha na tabela execucoes. executada_em e um datetime
+    (horario de Brasilia, ver captura/relogio.py)."""
+    conexao.execute(
+        """
+        INSERT INTO execucoes (
+            executada_em, resultado, municipios_consultados, municipios_com_falha,
+            editais_na_lista, editais_novos_ou_atualizados
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            executada_em.isoformat(), resultado, municipios_consultados,
+            municipios_com_falha, editais_na_lista, editais_novos_ou_atualizados,
+        ),
+    )
+    conexao.commit()
+
+
+def consultar_execucoes_desde(conexao, desde):
+    """Devolve as execucoes registradas a partir de `desde` (datetime), da
+    mais recente pra mais antiga, cada uma como dicionario."""
+    cursor = conexao.execute(
+        "SELECT * FROM execucoes WHERE executada_em >= ? ORDER BY executada_em DESC, id DESC",
+        (desde.isoformat(),),
+    )
+    return [dict(linha) for linha in cursor.fetchall()]
+
+
+def contar_editais_abertos(conexao, agora):
+    """Quantos editais estao valendo agora: situacao "Divulgada no PNCP",
+    nao excluidos e com prazo depois de `agora` (horario de Brasilia)."""
+    linha = conexao.execute(
+        """
+        SELECT COUNT(*) AS total FROM editais
+        WHERE situacao = ? AND excluido_em IS NULL AND data_encerramento_proposta > ?
+        """,
+        (SITUACAO_DIVULGADA, agora.isoformat()),
+    ).fetchone()
+    return linha["total"]
+
+
+def contar_editais_vistos_desde(conexao, desde):
+    """Quantos editais (nao excluidos) o Radar viu pela primeira vez a
+    partir de `desde` (datetime). Usa visto_em, o carimbo de registro."""
+    linha = conexao.execute(
+        "SELECT COUNT(*) AS total FROM editais WHERE visto_em >= ? AND excluido_em IS NULL",
+        (desde.isoformat(),),
+    ).fetchone()
+    return linha["total"]
 
 
 def salvar_itens(conexao, numero_controle_pncp, itens):

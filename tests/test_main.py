@@ -248,3 +248,169 @@ def test_reconciliacao_usa_cnpj_ano_e_sequencial_do_link_salvo(tmp_path, monkeyp
     main.reconciliar_editais_sumidos(conexao, [], dias=30)
 
     assert chamadas == [("00000000000000", 2026, 359)]
+
+
+# ---------------------------------------------------------------------------
+# registrar_execucao_e_enviar_batimento: relogio simulado (segunda = 23/11/2026)
+# ---------------------------------------------------------------------------
+
+SEGUNDA_06H = datetime(2026, 11, 23, 6, 0)
+SEGUNDA_04H = datetime(2026, 11, 23, 4, 0)
+TERCA_10H = datetime(2026, 11, 24, 10, 0)
+
+
+def _preparar_batimento(monkeypatch, agora, envio_funciona=True):
+    """Fixa o relogio e troca o envio de e-mail por um falso, que so anota
+    cada e-mail pedido. Devolve a lista de e-mails 'enviados'."""
+    enviados = []
+
+    def enviar_falso(destinatario, assunto, corpo_html):
+        enviados.append({"destinatario": destinatario, "assunto": assunto, "corpo": corpo_html})
+        return envio_funciona
+
+    monkeypatch.setattr(main, "agora_em_brasilia", lambda: agora)
+    monkeypatch.setattr(main.email_sender, "enviar_email", enviar_falso)
+    return enviados
+
+
+def _rodar_captura(conexao, destinatario="bruno@exemplo.com", falhas=()):
+    main.registrar_execucao_e_enviar_batimento(
+        conexao, destinatario, total_municipios=143, municipios_com_falha=list(falhas),
+        editais_na_lista=330, editais_novos_ou_atualizados=5,
+    )
+
+
+def test_batimento_sai_na_primeira_captura_de_segunda_depois_das_05h(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+
+    _rodar_captura(conexao)
+
+    assert len(enviados) == 1
+    assert enviados[0]["destinatario"] == "bruno@exemplo.com"
+    assert enviados[0]["assunto"] == "Radar ativo: resumo da semana - 23/11/2026"
+    assert banco.ler_metadado(conexao, "batimento_enviado_em") == SEGUNDA_06H.isoformat()
+
+
+def test_batimento_nao_repete_na_segunda_captura_do_mesmo_dia(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+    _rodar_captura(conexao)
+
+    monkeypatch.setattr(main, "agora_em_brasilia", lambda: datetime(2026, 11, 23, 13, 7))
+    _rodar_captura(conexao)
+
+    assert len(enviados) == 1
+    assert len(banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 1))) == 2
+
+
+def test_batimento_nao_sai_na_madrugada_de_segunda(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_04H)
+
+    _rodar_captura(conexao)
+
+    assert enviados == []
+    assert banco.ler_metadado(conexao, "batimento_enviado_em") is None
+
+
+def test_captura_da_madrugada_nao_gasta_o_batimento_da_manha(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_04H)
+    _rodar_captura(conexao)
+
+    monkeypatch.setattr(main, "agora_em_brasilia", lambda: SEGUNDA_06H)
+    _rodar_captura(conexao)
+
+    assert len(enviados) == 1
+
+
+def test_batimento_nao_sai_fora_da_segunda(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, TERCA_10H)
+
+    _rodar_captura(conexao)
+
+    assert enviados == []
+
+
+def test_batimento_volta_a_sair_na_segunda_seguinte(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+    _rodar_captura(conexao)
+
+    monkeypatch.setattr(main, "agora_em_brasilia", lambda: datetime(2026, 11, 30, 6, 0))
+    _rodar_captura(conexao)
+
+    assert len(enviados) == 2
+
+
+def test_email_que_falhou_nao_marca_como_enviado_e_a_proxima_captura_tenta(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H, envio_funciona=False)
+
+    _rodar_captura(conexao)
+    assert banco.ler_metadado(conexao, "batimento_enviado_em") is None
+
+    monkeypatch.setattr(main.email_sender, "enviar_email", lambda d, a, c: True)
+    monkeypatch.setattr(main, "agora_em_brasilia", lambda: datetime(2026, 11, 23, 13, 7))
+    _rodar_captura(conexao)
+
+    assert len(enviados) == 1  # so a primeira tentativa, que falhou
+    assert banco.ler_metadado(conexao, "batimento_enviado_em") == "2026-11-23T13:07:00"
+
+
+def test_sem_destinatario_registra_a_execucao_mas_nao_envia(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+
+    _rodar_captura(conexao, destinatario=None)
+
+    assert enviados == []
+    assert len(banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 1))) == 1
+
+
+def test_captura_completa_e_registrada_como_completa(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    _preparar_batimento(monkeypatch, TERCA_10H)
+
+    _rodar_captura(conexao)
+
+    execucao = banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 1))[0]
+    assert execucao["resultado"] == "completa"
+    assert execucao["executada_em"] == "2026-11-24T10:00:00"
+    assert execucao["municipios_consultados"] == 143
+    assert execucao["editais_na_lista"] == 330
+    assert execucao["editais_novos_ou_atualizados"] == 5
+
+
+def test_captura_com_municipios_de_fora_e_registrada_com_falhas(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    _preparar_batimento(monkeypatch, TERCA_10H)
+
+    _rodar_captura(conexao, falhas=["Votuporanga/SP", "Catanduva/SP"])
+
+    execucao = banco.consultar_execucoes_desde(conexao, datetime(2026, 11, 1))[0]
+    assert execucao["resultado"] == "com_falhas"
+    assert execucao["municipios_com_falha"] == 2
+
+
+def test_captura_em_que_todos_os_municipios_falharam_nao_conta(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+    todos = [f"Municipio{n}/SP" for n in range(143)]
+
+    _rodar_captura(conexao, falhas=todos)
+
+    assert banco.consultar_execucoes_desde(conexao, datetime(2026, 1, 1)) == []
+    assert enviados == []
+
+
+def test_batimento_traz_a_captura_que_acabou_de_ser_registrada(tmp_path, monkeypatch):
+    conexao = _banco_de_teste(tmp_path)
+    enviados = _preparar_batimento(monkeypatch, SEGUNDA_06H)
+
+    _rodar_captura(conexao)
+
+    assert "23/11/2026 06h00" in enviados[0]["corpo"]
+    assert "completa, 143 municípios consultados" in enviados[0]["corpo"]

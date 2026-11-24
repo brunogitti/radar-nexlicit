@@ -66,3 +66,13 @@ Sobre os itens, que não estão no Swagger:
 - Reconciliação (`main.reconciliar_editais_sumidos`): depois de salvar, consulta uma vez cada edital do banco que ainda parece aberto (prazo entre agora e o fim da janela de dias, sem `excluido_em`) e que não veio na lista. 410 grava `excluido_em`; outra situação grava a situação nova; "Divulgada" não muda nada; falha de consulta não muda nada. Não roda com `--municipio` nem com `--dry-run`, e um erro inesperado nela não derruba a captura.
 - Painel: editais com `excluido_em` ficam de fora de tudo (contagens e lista). Situação diferente de "Divulgada" aparece num selo no card e o edital não conta como "Encerra em breve".
 - Limite conhecido: um edital já enviado por e-mail não pode ser "retirado" depois, e o aviso de que ele foi suspenso ou excluído aparece só no painel.
+
+## 6. E-mail semanal "Radar ativo" e registro de execuções (implementado em 24/11/2026)
+
+- **Para quê:** se o e-mail de segunda-feira não chegar, a captura quebrou (token vencido, workflow travado). É um aviso por ausência. Limite: prova que a captura rodou, não que o disparo externo está ativo.
+- **Quando sai:** na primeira captura completa de segunda-feira a partir das 05h de Brasília (`entrega/batimento.deve_enviar`). Uma captura de madrugada de segunda não gasta o envio. No máximo um por dia. Se a segunda passa sem captura bem-sucedida, não sai (a falta do e-mail é o sinal).
+- **Controle de envio:** tabela chave-valor `metadados` no banco (chave `batimento_enviado_em`), porque o banco é a única coisa que o workflow publica entre execuções. E-mail que falha não marca como enviado, então a próxima captura de segunda tenta de novo.
+- **Registro de execuções:** tabela `execucoes`, uma linha por captura completa e de verdade (nunca em `--dry-run` nem com `--municipio`): horário de Brasília, resultado (`completa` ou `com_falhas`), municípios consultados e com falha, editais na lista e novos ou atualizados. Captura em que todos os municípios falharam não é registrada. Serve ao resumo semanal e já adianta o registro de execuções da coleta v2.
+- **Conteúdo:** só números, sem lista de editais. Primeiro o que mostra se o Radar está vivo (data e hora da última captura bem-sucedida, execuções nos últimos 7 dias, quantas com municípios de fora, maior intervalo entre duas capturas na semana), depois o que ele encontrou (editais abertos, novos na semana). O maior intervalo existe porque a última captura de um e-mail de segunda é sempre a que acabou de rodar, então sozinha não distingue "sem novidade" de "Radar parado".
+- **Destinatário:** o mesmo endereço que a captura já usa (`--enviar-email`, secret `EMAIL_DESTINATARIO`).
+- `capturar_editais` passou a devolver também a lista de municípios que falharam.
