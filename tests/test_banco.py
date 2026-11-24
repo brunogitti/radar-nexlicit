@@ -5,6 +5,7 @@ Como rodar (com o venv ativado, na pasta do projeto):
     python -m pytest tests/test_banco.py -v
 """
 
+import sqlite3
 from datetime import datetime, timedelta
 
 from captura import banco
@@ -328,3 +329,161 @@ def test_edital_tem_itens_salvos(tmp_path):
     banco.salvar_itens(conexao, numero, [_item_de_teste()])
 
     assert banco.edital_tem_itens_salvos(conexao, numero) is True
+
+
+# ---------------------------------------------------------------------------
+# Edital excluido pelo PNCP (coluna excluido_em) e situacao nova
+# ---------------------------------------------------------------------------
+
+
+def _salvar_edital(conexao, numero, prazo=None):
+    edital = _edital_de_teste(numero_controle_pncp=numero, prazo=prazo)
+    banco.salvar(conexao, [(edital, "novo", None)])
+    return edital
+
+
+def _colunas_de_editais(caminho):
+    conexao = sqlite3.connect(caminho)
+    colunas = [linha[1] for linha in conexao.execute("PRAGMA table_info(editais)")]
+    conexao.close()
+    return colunas
+
+
+def test_banco_novo_ja_tem_a_coluna_excluido_em(tmp_path):
+    caminho = str(tmp_path / "novo.db")
+    banco.conectar(caminho).close()
+
+    assert "excluido_em" in _colunas_de_editais(caminho)
+
+
+def test_banco_antigo_sem_a_coluna_ganha_ela_sem_perder_editais(tmp_path):
+    caminho = str(tmp_path / "antigo.db")
+    # banco como era antes da coluna: tabela sem excluido_em, com 1 edital
+    antigo = sqlite3.connect(caminho)
+    antigo.execute(banco.CRIAR_TABELA_SQL)
+    antigo.execute(
+        "INSERT INTO editais (numero_controle_pncp, situacao, visto_em, atualizado_em) "
+        "VALUES ('X-1', 'Divulgada no PNCP', '2026-11-01T10:00:00', '2026-11-01T10:00:00')"
+    )
+    antigo.commit()
+    antigo.close()
+    assert "excluido_em" not in _colunas_de_editais(caminho)
+
+    conexao = banco.conectar(caminho)
+
+    assert "excluido_em" in _colunas_de_editais(caminho)
+    linha = conexao.execute("SELECT * FROM editais WHERE numero_controle_pncp = 'X-1'").fetchone()
+    assert linha["situacao"] == "Divulgada no PNCP"
+    assert linha["excluido_em"] is None
+
+
+def test_conectar_duas_vezes_nao_da_erro_nem_duplica_a_coluna(tmp_path):
+    caminho = str(tmp_path / "duas.db")
+    banco.conectar(caminho).close()
+    banco.conectar(caminho).close()
+
+    assert _colunas_de_editais(caminho).count("excluido_em") == 1
+
+
+def test_marcar_excluido_preenche_excluido_em_e_nao_apaga_a_linha(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+
+    banco.marcar_excluido(conexao, "A-1", datetime(2026, 11, 24, 10, 0))
+
+    assert banco.contar_editais(str(tmp_path / "teste.db")) == 1
+    linha = conexao.execute("SELECT excluido_em FROM editais WHERE numero_controle_pncp = 'A-1'").fetchone()
+    assert linha["excluido_em"] == "2026-11-24T10:00:00"
+
+
+def test_historico_esconde_excluidos_por_padrao(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+    _salvar_edital(conexao, "A-2")
+    banco.marcar_excluido(conexao, "A-1", datetime(2026, 11, 24, 10, 0))
+
+    numeros = [linha["numero_controle_pncp"] for linha in banco.consultar_historico(conexao)]
+
+    assert numeros == ["A-2"]
+
+
+def test_historico_pode_incluir_excluidos_quando_pedido(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+    banco.marcar_excluido(conexao, "A-1", datetime(2026, 11, 24, 10, 0))
+
+    linhas = banco.consultar_historico(conexao, incluir_excluidos=True)
+
+    assert len(linhas) == 1
+
+
+def test_historico_com_dias_tambem_esconde_excluidos(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+    _salvar_edital(conexao, "A-2")
+    banco.marcar_excluido(conexao, "A-2", datetime(2026, 11, 24, 10, 0))
+
+    numeros = [linha["numero_controle_pncp"] for linha in banco.consultar_historico(conexao, dias=30)]
+
+    assert numeros == ["A-1"]
+
+
+def test_atualizar_situacao_muda_so_a_situacao(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1")
+
+    banco.atualizar_situacao(conexao, "A-1", "Suspensa", datetime(2026, 11, 24, 10, 0))
+
+    linha = banco.consultar_historico(conexao)[0]
+    assert linha["situacao"] == "Suspensa"
+    assert linha["excluido_em"] is None
+    assert linha["municipio"] == "Votuporanga"
+
+
+def test_abertos_fora_da_lista_devolve_so_quem_nao_veio_na_lista(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "NA-LISTA", prazo=datetime(2026, 12, 10, 9, 0))
+    _salvar_edital(conexao, "SUMIU", prazo=datetime(2026, 12, 10, 9, 0))
+
+    sumidos = banco.buscar_abertos_fora_da_lista(
+        conexao, datetime(2026, 11, 24, 10, 0), datetime(2026, 12, 24, 10, 0), {"NA-LISTA"}
+    )
+
+    assert [e["numero_controle_pncp"] for e in sumidos] == ["SUMIU"]
+
+
+def test_abertos_fora_da_lista_ignora_prazo_vencido_e_alem_da_janela(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "VENCIDO", prazo=datetime(2026, 11, 20, 9, 0))
+    _salvar_edital(conexao, "LONGE", prazo=datetime(2027, 3, 1, 9, 0))
+    _salvar_edital(conexao, "DENTRO", prazo=datetime(2026, 12, 10, 9, 0))
+
+    sumidos = banco.buscar_abertos_fora_da_lista(
+        conexao, datetime(2026, 11, 24, 10, 0), datetime(2026, 12, 24, 10, 0), set()
+    )
+
+    assert [e["numero_controle_pncp"] for e in sumidos] == ["DENTRO"]
+
+
+def test_abertos_fora_da_lista_nao_devolve_quem_ja_foi_marcado_excluido(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _salvar_edital(conexao, "A-1", prazo=datetime(2026, 12, 10, 9, 0))
+    banco.marcar_excluido(conexao, "A-1", datetime(2026, 11, 24, 10, 0))
+
+    sumidos = banco.buscar_abertos_fora_da_lista(
+        conexao, datetime(2026, 11, 24, 10, 0), datetime(2026, 12, 24, 10, 0), set()
+    )
+
+    assert sumidos == []
+
+
+def test_salvar_de_novo_um_edital_excluido_nao_apaga_a_marca(tmp_path):
+    # a captura normal regrava editais; isso nao pode "desexcluir" sem querer
+    conexao = _banco_de_teste(tmp_path)
+    edital = _salvar_edital(conexao, "A-1")
+    banco.marcar_excluido(conexao, "A-1", datetime(2026, 11, 24, 10, 0))
+
+    banco.salvar(conexao, [(edital, "atualizado", banco._buscar_edital_salvo(conexao, "A-1"))])
+
+    linha = conexao.execute("SELECT excluido_em FROM editais WHERE numero_controle_pncp = 'A-1'").fetchone()
+    assert linha["excluido_em"] == "2026-11-24T10:00:00"
