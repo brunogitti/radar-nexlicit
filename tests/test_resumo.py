@@ -7,6 +7,7 @@ Como rodar (com o venv ativado, na pasta do projeto):
 
 from datetime import datetime
 
+from captura import banco
 from captura.modelos import Edital
 from entrega.resumo import montar_corpo_html
 
@@ -79,3 +80,23 @@ def test_contagem_no_cabecalho_do_segmento():
     html = montar_corpo_html([(edital_a, "novo", None), (edital_b, "novo", None)])
 
     assert "Limpeza (2)" in html
+
+
+def test_email_de_edital_que_voltou_de_suspensa_para_divulgada_diz_a_mudanca(tmp_path):
+    # Caminho completo, sem atalho: o edital fica salvo como Suspensa (foi o
+    # que a reconciliacao gravou), depois reaparece na lista como "Divulgada
+    # no PNCP". O banco o classifica como atualizado e o e-mail tem que dizer
+    # de onde para onde a situacao mudou.
+    conexao = banco.conectar(str(tmp_path / "teste.db"))
+    suspenso = _edital_de_teste()
+    suspenso.situacao = "Suspensa"
+    banco.salvar(conexao, [(suspenso, "novo", None)])
+
+    voltou = _edital_de_teste()  # situacao "Divulgada no PNCP"
+    classificados = banco.classificar(conexao, [voltou])
+    assert classificados[0][1] == "atualizado"
+
+    html = montar_corpo_html(classificados)
+
+    # o texto passa por escape de HTML (as aspas simples viram &#x27;)
+    assert "situação mudou de &#x27;Suspensa&#x27; para &#x27;Divulgada no PNCP&#x27;" in html

@@ -126,3 +126,12 @@ def test_formatar_status_atualizado_sem_diferenca_detectavel():
     linha_anterior = _linha_anterior_de_teste()
 
     assert formatar_status(edital, "atualizado", linha_anterior) == "ATUALIZADO"
+
+
+def test_formatar_status_suspensa_voltou_a_divulgada_diz_a_mudanca_no_texto():
+    edital = _edital_de_teste(situacao="Divulgada no PNCP")
+    linha_anterior = _linha_anterior_de_teste(situacao="Suspensa")
+
+    resultado = formatar_status(edital, "atualizado", linha_anterior)
+
+    assert resultado == "ATUALIZADO (situação mudou de 'Suspensa' para 'Divulgada no PNCP')"
