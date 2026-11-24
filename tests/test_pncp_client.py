@@ -411,3 +411,76 @@ def test_falha_de_rede_ao_buscar_documentos_devolve_none_sem_travar(monkeypatch)
     resultado = pncp_client.buscar_arquivos_da_compra("00000000000000", 2026, 1)
 
     assert resultado is None
+
+
+# ---------------------------------------------------------------------------
+# Descarte de edital "ja vencido" (buscar_contratacoes_com_proposta_aberta):
+# o prazo do PNCP e em horario de Brasilia, entao a comparacao tem que usar
+# a hora de Brasilia, nao a do computador (UTC no GitHub Actions).
+# ---------------------------------------------------------------------------
+
+
+def _item_cru_com_prazo(prazo_iso):
+    """Um item no formato da API, com o prazo pedido e situacao Divulgada."""
+    return {
+        "numeroControlePNCP": "00000000000000-1-000001/2026",
+        "orgaoEntidade": {"cnpj": "00000000000000", "razaoSocial": "PREFEITURA TESTE"},
+        "unidadeOrgao": {"municipioNome": "Teste", "ufSigla": "SP", "codigoIbge": "1"},
+        "anoCompra": 2026,
+        "sequencialCompra": 1,
+        "modalidadeNome": "Pregão - Eletrônico",
+        "objetoCompra": "OBJETO",
+        "situacaoCompraId": pncp_client.SITUACAO_DIVULGADA_NO_PNCP,
+        "situacaoCompraNome": "Divulgada no PNCP",
+        "dataEncerramentoProposta": prazo_iso,
+    }
+
+
+def _buscar_com_agora_e_prazo(monkeypatch, agora_em_brasilia, prazo_iso):
+    monkeypatch.setattr(pncp_client, "agora_em_brasilia", lambda: agora_em_brasilia)
+    corpo = {"totalPaginas": 1, "totalRegistros": 1, "data": [_item_cru_com_prazo(prazo_iso)]}
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", lambda url, params: _RespostaFalsa(200, corpo))
+    return pncp_client.buscar_contratacoes_com_proposta_aberta("1")
+
+
+def test_mantem_edital_com_prazo_as_20h_quando_em_brasilia_sao_19h(monkeypatch):
+    # No GitHub o relogio marca 22h (UTC). Comparando com isso o edital
+    # seria descartado 1 hora antes de vencer. Em Brasilia sao 19h: mantem.
+    editais = _buscar_com_agora_e_prazo(
+        monkeypatch, datetime(2026, 11, 23, 19, 0), "2026-11-23T20:00:00"
+    )
+
+    assert len(editais) == 1
+
+
+def test_descarta_edital_cujo_prazo_ja_passou_em_brasilia(monkeypatch):
+    editais = _buscar_com_agora_e_prazo(
+        monkeypatch, datetime(2026, 11, 23, 20, 30), "2026-11-23T20:00:00"
+    )
+
+    assert editais == []
+
+
+def test_descarta_edital_no_instante_exato_do_prazo(monkeypatch):
+    editais = _buscar_com_agora_e_prazo(
+        monkeypatch, datetime(2026, 11, 23, 20, 0), "2026-11-23T20:00:00"
+    )
+
+    assert editais == []
+
+
+def test_data_final_da_janela_usa_a_data_de_brasilia(monkeypatch):
+    # 23h de Brasilia do dia 23 (02h UTC do dia 24): janela de 30 dias tem
+    # que terminar em 23/12, nao em 24/12.
+    monkeypatch.setattr(pncp_client, "agora_em_brasilia", lambda: datetime(2026, 11, 23, 23, 0))
+    parametros_enviados = []
+
+    def requisicao_falsa(url, params):
+        parametros_enviados.append(params)
+        return _RespostaFalsa(204)
+
+    monkeypatch.setattr(pncp_client, "_fazer_requisicao", requisicao_falsa)
+
+    pncp_client.buscar_contratacoes_com_proposta_aberta("1", dias_janela=30)
+
+    assert parametros_enviados[0]["dataFinal"] == "20261223"

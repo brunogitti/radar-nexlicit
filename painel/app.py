@@ -24,6 +24,7 @@ import streamlit as st
 
 from captura import banco, filtro, pncp_client
 from captura.normalizacao import normalizar_texto
+from captura.relogio import dias_ate_o_prazo, hoje_em_brasilia
 
 # COR_INK, COR_PAPER e COR_BRASS tambem existem copiadas em
 # .streamlit/config.toml (textColor, backgroundColor, primaryColor), o
@@ -180,6 +181,10 @@ def _renderizar_resumo_executivo(editais):
         1 for e in editais
         if _eh_urgente(datetime.fromisoformat(e["data_encerramento_proposta"]))
     )
+    # Fica com date.today() de proposito: "visto_em" e um carimbo gravado com
+    # o relogio de onde a captura rodou (UTC no GitHub), e o painel tambem
+    # roda em UTC no Streamlit Cloud. Comparar os dois no mesmo relogio mantem
+    # a conta coerente; misturar com Brasilia desalinharia entre 21h e 24h.
     hoje = date.today()
     captados_hoje = sum(
         1 for e in editais
@@ -292,7 +297,7 @@ def montar_filtros(editais):
     segmentos_selecionados = st.sidebar.multiselect("Segmento", segmentos)
     modalidades_selecionadas = st.sidebar.multiselect("Modalidade", modalidades)
 
-    hoje = date.today()
+    hoje = hoje_em_brasilia()  # o prazo dos editais e em horario de Brasilia
     intervalo_padrao = (hoje, hoje + timedelta(days=90))
     intervalo_escolhido = st.sidebar.date_input("Encerramento da proposta entre", value=intervalo_padrao)
 
@@ -386,7 +391,7 @@ def _eh_urgente(prazo):
     proposta (prazos ja vencidos nao contam aqui, isso e um estado
     diferente de "urgente", fora do escopo desta entrega).
     """
-    dias_restantes = (prazo.date() - date.today()).days
+    dias_restantes = dias_ate_o_prazo(prazo)
     return 0 <= dias_restantes <= DIAS_LIMIAR_URGENTE
 
 

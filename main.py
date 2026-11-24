@@ -24,6 +24,7 @@ from datetime import datetime
 from captura import banco, filtro, pncp_client
 from captura.apresentacao import formatar_selo_me_epp, formatar_status, formatar_valor
 from captura.normalizacao import normalizar_texto, termo_bate_no_texto
+from captura.relogio import agora_em_brasilia
 from entrega import email_sender, resumo
 
 logger = logging.getLogger("main")
@@ -328,7 +329,7 @@ def main():
         editais_para_email = [item for item in editais_classificados if item[1] != "sem_mudanca"]
 
         if editais_para_email:
-            assunto = f"Radar NexLicit: {len(editais_para_email)} edital(is) novo(s) - {datetime.now():%d/%m/%Y}"
+            assunto = f"Radar NexLicit: {len(editais_para_email)} edital(is) novo(s) - {agora_em_brasilia():%d/%m/%Y}"
             corpo_html = resumo.montar_corpo_html(editais_para_email)
             email_sender.enviar_email(argumentos.enviar_email, assunto, corpo_html)
         else:

@@ -32,7 +32,6 @@ import argparse
 import json
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +39,7 @@ RAIZ_DO_PROJETO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ_DO_PROJETO))
 
 from captura import banco, filtro, pncp_client
+from captura.relogio import agora_em_brasilia
 
 CAMINHO_KEYWORDS = RAIZ_DO_PROJETO / "config" / "keywords.yaml"
 
@@ -56,7 +56,8 @@ def buscar_editais_para_reprocessar(conexao):
     (SELECT dentro do SELECT): pra cada edital, conta quantas linhas
     existem em itens_edital com o mesmo numero_controle_pncp.
     """
-    agora = datetime.now().isoformat()
+    # compara com o prazo da proposta, que e em horario de Brasilia
+    agora = agora_em_brasilia().isoformat()
     cursor = conexao.execute(
         """
         SELECT
