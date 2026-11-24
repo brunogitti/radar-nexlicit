@@ -56,18 +56,37 @@ def deve_enviar(agora, ultimo_envio_iso):
 def montar_resumo(conexao, agora):
     """Junta os numeros do e-mail. Devolve um dicionario com:
     editais_abertos, editais_novos_na_semana, capturas_na_semana,
-    capturas_com_falhas_na_semana e ultima_execucao (dicionario da linha
-    mais recente da tabela execucoes, ou None se nao houver nenhuma)."""
+    capturas_com_falhas_na_semana, ultima_execucao (dicionario da linha
+    mais recente da tabela execucoes, ou None se nao houver nenhuma) e
+    maior_intervalo_em_horas (o maior tempo entre duas capturas seguidas na
+    semana, ou None se houver menos de duas).
+
+    O maior intervalo existe porque a "ultima captura" de um e-mail de
+    segunda e sempre a que acabou de rodar, entao sozinha nao mostra se o
+    Radar ficou parado no meio da semana. Um intervalo de 30 horas, por
+    exemplo, mostra."""
     desde = agora - timedelta(days=DIAS_DO_RESUMO)
     execucoes = banco.consultar_execucoes_desde(conexao, desde)
 
     return {
+        "maior_intervalo_em_horas": _maior_intervalo_em_horas(execucoes),
         "editais_abertos": banco.contar_editais_abertos(conexao, agora),
         "editais_novos_na_semana": banco.contar_editais_vistos_desde(conexao, desde),
         "capturas_na_semana": len(execucoes),
         "capturas_com_falhas_na_semana": sum(1 for e in execucoes if e["resultado"] != "completa"),
         "ultima_execucao": execucoes[0] if execucoes else None,
     }
+
+
+def _maior_intervalo_em_horas(execucoes):
+    """Maior tempo, em horas, entre duas capturas consecutivas. Recebe a
+    lista como banco.consultar_execucoes_desde devolve (da mais recente pra
+    mais antiga). None se houver menos de duas capturas."""
+    momentos = sorted(datetime.fromisoformat(e["executada_em"]) for e in execucoes)
+    if len(momentos) < 2:
+        return None
+    intervalos = [depois - antes for antes, depois in zip(momentos, momentos[1:])]
+    return max(intervalos).total_seconds() / 3600
 
 
 def montar_assunto(agora):
@@ -93,12 +112,16 @@ def _texto_da_ultima_execucao(ultima_execucao):
 def montar_corpo_html(resumo):
     """Corpo do e-mail em HTML simples (mesma ideia do entrega/resumo.py)."""
     ultima = _texto_da_ultima_execucao(resumo["ultima_execucao"])
+    maior_intervalo = resumo["maior_intervalo_em_horas"]
+    texto_intervalo = "sem dados suficientes" if maior_intervalo is None else f"{maior_intervalo:.0f} h"
+    # Primeiro o que diz se o Radar esta vivo, depois o que ele encontrou.
     linhas = [
+        ("Última captura bem-sucedida", ultima),
+        (f"Execuções nos últimos {DIAS_DO_RESUMO} dias", resumo["capturas_na_semana"]),
+        ("Dessas, com municípios de fora", resumo["capturas_com_falhas_na_semana"]),
+        ("Maior intervalo entre duas capturas na semana", texto_intervalo),
         ("Editais abertos no banco", resumo["editais_abertos"]),
         (f"Editais novos nos últimos {DIAS_DO_RESUMO} dias", resumo["editais_novos_na_semana"]),
-        (f"Capturas nos últimos {DIAS_DO_RESUMO} dias", resumo["capturas_na_semana"]),
-        ("Dessas, com municípios de fora", resumo["capturas_com_falhas_na_semana"]),
-        ("Última captura", ultima),
     ]
     itens = "".join(
         f'<p style="margin:4px 0;">{html.escape(str(rotulo))}: <strong>{html.escape(str(valor))}</strong></p>'

@@ -108,6 +108,7 @@ def test_resumo_de_banco_vazio(tmp_path):
         "capturas_na_semana": 0,
         "capturas_com_falhas_na_semana": 0,
         "ultima_execucao": None,
+        "maior_intervalo_em_horas": None,
     }
 
 
@@ -164,6 +165,7 @@ def _resumo_de_teste(ultima_execucao):
         "capturas_na_semana": 14,
         "capturas_com_falhas_na_semana": 1,
         "ultima_execucao": ultima_execucao,
+        "maior_intervalo_em_horas": 30.0,
     }
 
 
@@ -183,8 +185,11 @@ def test_corpo_traz_os_numeros_e_a_ultima_captura_completa():
     assert "<strong>74</strong>" in corpo
     assert "<strong>12</strong>" in corpo
     assert "<strong>14</strong>" in corpo
+    assert "Última captura bem-sucedida" in corpo
     assert "22/11/2026 13h00" in corpo
     assert "completa, 143 municípios consultados" in corpo
+    assert "Execuções nos últimos 7 dias" in corpo
+    assert "Maior intervalo entre duas capturas na semana: <strong>30 h</strong>" in corpo
 
 
 def test_corpo_avisa_quando_a_ultima_captura_teve_falhas():
@@ -199,6 +204,49 @@ def test_corpo_avisa_quando_a_ultima_captura_teve_falhas():
 
 
 def test_corpo_sem_nenhuma_captura_registrada():
-    corpo = batimento.montar_corpo_html(_resumo_de_teste(None))
+    resumo = _resumo_de_teste(None)
+    resumo["maior_intervalo_em_horas"] = None
+
+    corpo = batimento.montar_corpo_html(resumo)
 
     assert "nenhuma registrada" in corpo
+    assert "sem dados suficientes" in corpo
+
+
+def test_corpo_mostra_primeiro_o_que_diz_se_o_radar_esta_vivo():
+    corpo = batimento.montar_corpo_html(_resumo_de_teste(None))
+
+    assert corpo.index("Última captura bem-sucedida") < corpo.index("Editais abertos no banco")
+
+
+# ---------------------------------------------------------------------------
+# maior intervalo entre capturas: separa "sem novidade" de "Radar parado"
+# ---------------------------------------------------------------------------
+
+
+def test_maior_intervalo_e_o_maior_buraco_entre_capturas_seguidas(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 17, 7, 0))
+    _registrar(conexao, datetime(2026, 11, 17, 13, 0))   # 6 h depois
+    _registrar(conexao, datetime(2026, 11, 18, 19, 0))   # 30 h depois (o buraco)
+    _registrar(conexao, datetime(2026, 11, 18, 22, 0))   # 3 h depois
+
+    resumo = batimento.montar_resumo(conexao, SEGUNDA_06H)
+
+    assert resumo["maior_intervalo_em_horas"] == 30.0
+
+
+def test_maior_intervalo_com_uma_captura_so_nao_existe(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 22, 7, 0))
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["maior_intervalo_em_horas"] is None
+
+
+def test_maior_intervalo_ignora_capturas_de_antes_da_janela_de_7_dias(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 1, 7, 0))    # fora da janela: o buraco ate a proxima nao conta
+    _registrar(conexao, datetime(2026, 11, 20, 7, 0))
+    _registrar(conexao, datetime(2026, 11, 20, 13, 0))  # 6 h
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["maior_intervalo_em_horas"] == 6.0
