@@ -34,6 +34,12 @@ concurrency:
 jobs:
   capturar:
     runs-on: ubuntu-latest
+    # Teto explicito de 3 horas (o padrao do GitHub e 6). Com GO (389
+    # municipios) a captura deve levar de 40 a 110 min, conforme a lentidao do
+    # PNCP. Uma execucao travada nao pode ocupar a fila (concurrency) por 6
+    # horas e segurar as proximas. Se estourar, o banco nao e publicado e a
+    # branch data continua com o ultimo banco bom.
+    timeout-minutes: 180
     permissions:
       contents: write # precisa poder empurrar (push) pras branches "data" e "backups" no final
     steps:

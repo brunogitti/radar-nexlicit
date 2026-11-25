@@ -41,11 +41,12 @@ def configurar_logging():
     )
 
 
-def carregar_municipios_ativos(caminho=CAMINHO_MUNICIPIOS, filtro_municipio=None):
+def carregar_municipios_ativos(caminho=CAMINHO_MUNICIPIOS, filtro_municipio=None, filtro_uf=None):
     """Le o municipios.csv e devolve so os municipios com ativo=sim.
 
     Se filtro_municipio for informado, devolve so o municipio cujo nome
     bate (comparando normalizado, sem acento/maiuscula) com o texto pedido.
+    Se filtro_uf for informado (ex.: "GO"), devolve so os municipios dessa UF.
     """
     with open(caminho, newline="", encoding="utf-8") as arquivo:
         linhas = list(csv.DictReader(arquivo))
@@ -55,6 +56,10 @@ def carregar_municipios_ativos(caminho=CAMINHO_MUNICIPIOS, filtro_municipio=None
     if filtro_municipio:
         alvo_normalizado = normalizar_texto(filtro_municipio)
         ativos = [linha for linha in ativos if normalizar_texto(linha["municipio"]) == alvo_normalizado]
+
+    if filtro_uf:
+        uf_pedida = filtro_uf.strip().upper()
+        ativos = [linha for linha in ativos if linha["uf"].strip().upper() == uf_pedida]
 
     return ativos
 
@@ -372,6 +377,11 @@ def main():
     )
     parser.add_argument("--dias", type=int, default=90, help="quantos dias a frente olhar (default: 90)")
     parser.add_argument("--municipio", help="filtra so por este municipio")
+    parser.add_argument(
+        "--uf",
+        help="captura so os municipios desta UF (ex.: GO). Como --municipio, e uma captura parcial: "
+             "nao reconcilia editais sumidos nem registra a execucao",
+    )
     parser.add_argument("--segmento", help="filtra so por este segmento")
     parser.add_argument("--dry-run", action="store_true", help="nao salva nada no banco, so mostra na tela")
     parser.add_argument(
@@ -400,9 +410,17 @@ def main():
         conexao_banco.close()
         return
 
-    municipios = carregar_municipios_ativos(filtro_municipio=argumentos.municipio)
+    municipios = carregar_municipios_ativos(filtro_municipio=argumentos.municipio, filtro_uf=argumentos.uf)
     if argumentos.municipio and not municipios:
         logger.warning("Nenhum municipio ativo encontrado com o nome '%s'", argumentos.municipio)
+    if argumentos.uf and not municipios:
+        logger.warning("Nenhum municipio ativo encontrado na UF '%s'", argumentos.uf)
+
+    # Captura parcial (so um municipio ou so uma UF): a lista de hoje nao
+    # traz os outros municipios, entao reconciliar faria todos os outros
+    # editais parecerem "sumidos", e registrar a execucao contaria como
+    # captura completa uma que nao foi.
+    captura_parcial = bool(argumentos.municipio or argumentos.uf)
     logger.info("%s municipio(s) ativo(s) para buscar", len(municipios))
 
     config_keywords = filtro.carregar_keywords(CAMINHO_KEYWORDS)
@@ -441,11 +459,10 @@ def main():
         # de editais que ficaram sem nenhum por falha na busca anterior
         salvar_itens_dos_editais(conexao_banco, todos_classificados)
 
-        # So numa captura completa: com --municipio a lista traz so um
-        # municipio, e todos os outros editais do banco pareceriam "sumidos".
+        # So numa captura completa (ver captura_parcial acima).
         # O try existe porque isto e um extra: se der erro inesperado aqui,
         # a captura e o e-mail (o que importa) seguem normalmente.
-        if not argumentos.municipio:
+        if not captura_parcial:
             try:
                 reconciliar_editais_sumidos(conexao_banco, editais_brutos, argumentos.dias)
             except Exception as erro:
@@ -464,9 +481,9 @@ def main():
             logger.info("Nenhum edital novo/atualizado, e-mail nao enviado")
 
     # Registro da execucao e e-mail semanal: so numa captura completa e de
-    # verdade (nao em --dry-run, nao com --municipio). O try existe porque
+    # verdade (nao em --dry-run, nao em captura parcial). O try existe porque
     # isto e um extra: erro aqui nao pode derrubar uma captura ja concluida.
-    if not argumentos.dry_run and not argumentos.municipio:
+    if not argumentos.dry_run and not captura_parcial:
         try:
             novos_ou_atualizados = [item for item in todos_classificados if item[1] != "sem_mudanca"]
             registrar_execucao_e_enviar_batimento(
