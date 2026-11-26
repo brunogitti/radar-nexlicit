@@ -23,7 +23,7 @@ on:
         type: boolean
         default: false
       enviar_email:
-        description: "Envia o e-mail de editais novos (e o semanal, na segunda). Desligue so para uma carga inicial, como a primeira captura de um estado novo: o banco e gravado normalmente e os editais nao voltam como novos depois."
+        description: "Envia o e-mail de editais novos (e o semanal, na segunda). ATENCAO: desligado, desliga o e-mail da captura INTEIRA, de TODOS os municipios. Tudo que for novo nessa captura e gravado no banco como visto e NUNCA sera avisado por e-mail depois. Use so para carga inicial e confira no log os novos fora da carga."
         type: boolean
         default: true
 
