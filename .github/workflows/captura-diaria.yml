@@ -22,6 +22,10 @@ on:
         description: "Busca de novo os itens dos editais ABERTOS que ficaram com exatamente 10 itens (ou nenhum) e grava no banco. So para rodar uma vez, a mao. Nao reclassifica nada. Deixe desligado no uso normal."
         type: boolean
         default: false
+      enviar_email:
+        description: "Envia o e-mail de editais novos (e o semanal, na segunda). Desligue so para uma carga inicial, como a primeira captura de um estado novo: o banco e gravado normalmente e os editais nao voltam como novos depois."
+        type: boolean
+        default: true
 
 # Uma execucao por vez, sempre. Se uma execucao manual coincidir com a
 # agendada, a segunda ESPERA a primeira terminar (cancel-in-progress: false
@@ -35,8 +39,9 @@ jobs:
   capturar:
     runs-on: ubuntu-latest
     # Teto explicito de 3 horas (o padrao do GitHub e 6). Com GO (389
-    # municipios) a captura deve levar de 40 a 110 min, conforme a lentidao do
-    # PNCP. Uma execucao travada nao pode ocupar a fila (concurrency) por 6
+    # municipios) a captura deve levar cerca de 1h45 (medido em 25/11/2026: 67
+    # min so de GO, mais cerca de 35 min dos outros 143), mais em dia de PNCP
+    # lento. Uma execucao travada nao pode ocupar a fila (concurrency) por 6
     # horas e segurar as proximas. Se estourar, o banco nao e publicado e a
     # branch data continua com o ultimo banco bom.
     timeout-minutes: 180
@@ -82,11 +87,23 @@ jobs:
       - name: Rodar os testes automatizados
         run: python -m pytest tests/ -q
 
+      # Sem o input enviar_email (disparo do agendador externo ou do
+      # agendador.yml), o GitHub usa o padrao "true" e o e-mail sai normal.
+      # Com "false", o main.py roda sem --enviar-email: captura, grava o
+      # banco e registra a execucao, mas nao manda nada.
       - name: Capturar editais e enviar e-mail
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python main.py --dias 30 --enviar-email "${{ secrets.EMAIL_DESTINATARIO }}"
+          EMAIL_DESTINATARIO: ${{ secrets.EMAIL_DESTINATARIO }}
+          ENVIAR_EMAIL: ${{ inputs.enviar_email }}
+        run: |
+          if [ "$ENVIAR_EMAIL" = "false" ]; then
+            echo "enviar_email desligado: captura sem nenhum e-mail"
+            python main.py --dias 30
+          else
+            python main.py --dias 30 --enviar-email "$EMAIL_DESTINATARIO"
+          fi
 
       # Publica o banco atualizado, mas so depois de conferir que ele esta
       # inteiro, nao esta vazio e nao tem menos editais que o banco que ja

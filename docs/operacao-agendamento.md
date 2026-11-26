@@ -14,6 +14,7 @@ O agendamento do próprio GitHub (gatilho `schedule`) atrasava a captura de 4,5 
 | **B** | Workflow "Agendador da captura" (`.github/workflows/agendador.yml`) | De 2 em 2 horas (minuto 37 das horas pares em UTC) | **Sim.** Só dispara se não houver captura rodando ou na fila e se o banco não foi publicado nas últimas 5 horas. |
 
 - **A** é o que dá pontualidade. **B** é a rede de segurança: se o agendador externo ou o token falhar, o B garante uma captura a cada poucas horas (dentro do atraso normal do GitHub).
+- **Repescagem:** o cron-job.org também chama o B às 9h37 e 15h37 de Brasília, para que uma captura perdida (como a das 13h07 de 25/11/2026, que recebeu HTTP 500 durante um incidente do GitHub) seja refeita no mesmo dia. Detalhes no passo 6.
 - A trava do B lê a hora do último commit da branch `data`. Cada publicação bem-sucedida do banco cria um commit novo lá, então essa hora é a da última publicação. A lógica está em `.github/scripts/decidir_agendamento.sh`.
 - Se o B não conseguir descobrir alguma informação (API fora, resposta estranha), ele **dispara mesmo assim**: uma captura a mais é inofensiva (o banco é blindado e a captura tem fila própria), mas pular por causa de erro na conferência seria pior.
 - O B fica num arquivo separado da captura de propósito. A captura tem uma fila (`concurrency`) para nunca rodar duas vezes juntas; se a trava morasse lá dentro, uma rodada que só pula poderia tirar da fila um disparo externo que estivesse esperando.
@@ -98,7 +99,43 @@ O token vence na data escolhida (1 ano). Três proteções:
 2. **Lembrete no calendário** 30 dias antes do vencimento: "Renovar token do agendador do Radar". Crie assim que tiver a data.
 3. A rede de segurança B continua rodando de 2 em 2 horas. Se o token vencer, o disparo externo falha (e o agendador avisa por e-mail), mas o Radar continua capturando. O que se perde é só a pontualidade das 7h07 e 13h07.
 
-**Renovar:** gere um token novo com as mesmas configurações (ou use "Regenerate token" na página do token), troque o valor do cabeçalho `Authorization` nos dois jobs, teste (passo 4) e só então revogue o token antigo. Anote a nova data de vencimento e atualize o lembrete.
+**Renovar:** gere um token novo com as mesmas configurações (ou use "Regenerate token" na página do token), troque o valor do cabeçalho `Authorization` nos **quatro** jobs (os dois de captura e os dois de repescagem, abaixo), teste (passo 4) e só então revogue o token antigo. Anote a nova data de vencimento e atualize o lembrete.
+
+### 6. Repescagem (dois jobs a mais no cron-job.org)
+
+**Por que existe.** Em 25/11/2026 o disparo das 13h07 recebeu **HTTP 500** do GitHub (incidente oficial do GitHub das 15:55 às 16:52 UTC, com "Actions" e "API Requests" degradados) e nenhuma captura começou. O B devia cobrir, mas o GitHub entrega só cerca de 2 dos 12 horários dele por dia, e horário perdido não é recuperado. O Radar ficou 7h30 sem capturar. A repescagem é uma segunda chance no mesmo dia, 2h30 depois de cada disparo.
+
+**O que ela faz.** Ela **não** chama a captura. Ela chama o **Agendador (B)**, que confere a trava: se a captura das 7h07 (ou das 13h07) rodou, ele termina verde **sem disparar nada**; se não rodou, ele dispara a captura. Assim a repescagem nunca gera captura repetida.
+
+**Criar no cron-job.org** dois jobs novos, iguais aos de captura em tudo, menos a URL e o horário:
+
+| Campo | Valor |
+|---|---|
+| Título (sugestão) | `Radar repescagem 09h37` e `Radar repescagem 15h37` |
+| **URL** | `https://api.github.com/repos/brunogitti/radar-nexlicit/actions/workflows/agendador.yml/dispatches` (atenção: **agendador.yml**, não captura-diaria.yml) |
+| **Método** | `POST` |
+| **Corpo** | `{"ref":"master"}` (sem `inputs`: o `ignorar_trava` fica desligado, que é o que se quer) |
+| **Cabeçalhos** | os mesmos cinco da tabela do passo 3, com o mesmo token |
+| **Horário** | 09:37 e 15:37, fuso America/Sao_Paulo (12:37 e 18:37 em UTC) |
+| **Notificação de falha** | por e-mail, já na **primeira** falha |
+| **Resposta esperada** | HTTP 204 |
+
+O token atual serve: a permissão "Actions: Read and write" vale para qualquer workflow do repositório.
+
+**Como fica um dia normal** (captura completa de cerca de 1h45 com os 389 municípios):
+
+| Horário | O que acontece |
+|---|---|
+| 07h07 | Captura (A). Publica o banco por volta das 08h50. |
+| 09h37 | Repescagem: o banco foi publicado há menos de 5 h, o B **pula**. |
+| 13h07 | Captura (A). Publica por volta das 14h50. |
+| 15h37 | Repescagem: o banco foi publicado há menos de 5 h (ou a captura ainda está rodando), o B **pula**. |
+
+**Quando a captura falha:** se a das 7h07 não rodou, às 09h37 a última publicação é da véspera e o B dispara. Se a das 13h07 não rodou, às 15h37 a última publicação é a da manhã (cerca de 7 h antes) e o B dispara. Caso raro que não é coberto: as **duas** do dia falharem e a repescagem das 09h37 ter publicado depois das 10h37. Às 15h37 ainda não terão passado 5 h e o B pula. O B de 2 em 2 horas e o e-mail semanal continuam cobrindo esse caso.
+
+**Testar:** use o botão de teste de um dos jobs. A resposta deve ser 204. Em `gh run list --workflow agendador.yml --limit 3` aparece um run `workflow_dispatch` que termina verde com a linha "Decisao: ..." dizendo que pulou (porque houve captura recente). Nenhuma captura nova deve aparecer em `gh run list --workflow captura-diaria.yml --limit 3`.
+
+**Limite:** a repescagem depende do mesmo cron-job.org que dispara a captura. Se o próprio cron-job.org parar, as duas param juntas. Um alarme independente (healthchecks.io) ficou para depois.
 
 ## Como medir o atraso
 
