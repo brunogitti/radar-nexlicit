@@ -39,9 +39,10 @@ jobs:
   capturar:
     runs-on: ubuntu-latest
     # Teto explicito de 3 horas (o padrao do GitHub e 6). Com GO (389
-    # municipios) a captura deve levar cerca de 1h45 (medido em 25/11/2026: 67
-    # min so de GO, mais cerca de 35 min dos outros 143), mais em dia de PNCP
-    # lento. Uma execucao travada nao pode ocupar a fila (concurrency) por 6
+    # municipios) a captura leva cerca de 2h20 (medido na #271 de
+    # 26/11/2026), mais em dia de PNCP lento. Nao aumentar sem rever a
+    # repescagem das 15h37 (docs/operacao-agendamento.md, passo 6): ela
+    # depende de a captura da manha publicar ate 10h37. Uma execucao travada nao pode ocupar a fila (concurrency) por 6
     # horas e segurar as proximas. Se estourar, o banco nao e publicado e a
     # branch data continua com o ultimo banco bom.
     timeout-minutes: 180

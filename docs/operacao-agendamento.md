@@ -122,16 +122,16 @@ O token vence na data escolhida (1 ano). Três proteções:
 
 O token atual serve: a permissão "Actions: Read and write" vale para qualquer workflow do repositório.
 
-**Como fica um dia normal** (captura completa de cerca de 1h45 com os 389 municípios):
+**Como fica um dia normal** (captura completa de cerca de 2h20 com os 389 municípios, medido na #271 de 26/11/2026):
 
 | Horário | O que acontece |
 |---|---|
-| 07h07 | Captura (A). Publica o banco por volta das 08h50. |
+| 07h07 | Captura (A). Publica o banco por volta das 09h30. |
 | 09h37 | Repescagem: o banco foi publicado há menos de 5 h, o B **pula**. |
-| 13h07 | Captura (A). Publica por volta das 14h50. |
+| 13h07 | Captura (A). Publica por volta das 15h30. |
 | 15h37 | Repescagem: o banco foi publicado há menos de 5 h (ou a captura ainda está rodando), o B **pula**. |
 
-**Quando a captura falha:** se a das 7h07 não rodou, às 09h37 a última publicação é da véspera e o B dispara. Se a das 13h07 não rodou, às 15h37 a última publicação é a da manhã (cerca de 7 h antes) e o B dispara. Caso raro que não é coberto: as **duas** do dia falharem e a repescagem das 09h37 ter publicado depois das 10h37. Às 15h37 ainda não terão passado 5 h e o B pula. O B de 2 em 2 horas e o e-mail semanal continuam cobrindo esse caso.
+**Quando a captura falha:** se a das 7h07 não rodou, às 09h37 a última publicação é da véspera e o B dispara. Se a das 13h07 não rodou, às 15h37 a última publicação é a da manhã (cerca de 6 h antes) e o B dispara. Isso depende de a captura da manhã publicar até 10h37: com o teto de 3 horas do workflow, a mais lenta possível publica por volta das 10h10. Caso raro que não é coberto: as **duas** do dia falharem e a repescagem das 09h37 ter publicado depois das 10h37. Às 15h37 ainda não terão passado 5 h e o B pula. O B de 2 em 2 horas e o e-mail semanal continuam cobrindo esse caso.
 
 **Testar:** use o botão de teste de um dos jobs. A resposta deve ser 204. Em `gh run list --workflow agendador.yml --limit 3` aparece um run `workflow_dispatch` que termina verde com a linha "Decisao: ..." dizendo que pulou (porque houve captura recente). Nenhuma captura nova deve aparecer em `gh run list --workflow captura-diaria.yml --limit 3`.
 
