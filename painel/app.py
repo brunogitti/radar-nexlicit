@@ -24,7 +24,8 @@ import streamlit as st
 
 from captura import banco, filtro, pncp_client
 from captura.normalizacao import normalizar_texto
-from captura.relogio import dias_ate_o_prazo, hoje_em_brasilia
+from captura.criterios import contar_editais_abertos
+from captura.relogio import agora_em_brasilia, dias_ate_o_prazo, hoje_em_brasilia
 
 # COR_INK, COR_PAPER e COR_BRASS tambem existem copiadas em
 # .streamlit/config.toml (textColor, backgroundColor, primaryColor), o
@@ -189,6 +190,9 @@ def _renderizar_resumo_executivo(editais):
     continua mais abaixo, junto da lista.
     """
     total = len(editais)
+    # Mesma funcao que o e-mail semanal "Radar ativo" usa (captura/criterios.py):
+    # nao excluido, "Divulgada no PNCP" e prazo ainda no futuro (hora de Brasilia).
+    abertos = contar_editais_abertos(editais, agora_em_brasilia())
     urgentes = sum(
         1 for e in editais
         if _edital_urgente(e)
@@ -205,6 +209,7 @@ def _renderizar_resumo_executivo(editais):
 
     tiles = [
         (total, "Editais monitorados"),
+        (abertos, "Editais abertos"),
         (urgentes, "Vencimento em breve"),
         (captados_hoje, "Captados hoje"),
     ]

@@ -19,7 +19,7 @@ que o disparo externo do cron-job.org esta ativo.
 import html
 from datetime import datetime, timedelta
 
-from captura import banco
+from captura import banco, criterios
 
 # Chave da tabela metadados onde fica o horario do ultimo envio.
 CHAVE_ULTIMO_ENVIO = "batimento_enviado_em"
@@ -27,6 +27,13 @@ CHAVE_ULTIMO_ENVIO = "batimento_enviado_em"
 SEGUNDA_FEIRA = 0  # datetime.weekday(): segunda = 0, terca = 1, ...
 HORA_MINIMA_EM_BRASILIA = 5
 DIAS_DO_RESUMO = 7
+
+# Referencia para ler o "maior intervalo entre capturas". Com o disparo
+# externo as 7h07 e 13h07, o intervalo da noite fica em cerca de 18 a 20 h
+# (medido: 20 h). A partir de 24 h alguma captura do dia foi perdida.
+INTERVALO_NORMAL_EM_HORAS = 20
+INTERVALO_DE_ATENCAO_EM_HORAS = 24
+COR_ATENCAO = "#B00020"  # vermelho
 
 
 def deve_enviar(agora, ultimo_envio_iso):
@@ -59,7 +66,12 @@ def montar_resumo(conexao, agora):
     capturas_com_falhas_na_semana, ultima_execucao (dicionario da linha
     mais recente da tabela execucoes, ou None se nao houver nenhuma) e
     maior_intervalo_em_horas (o maior tempo entre duas capturas seguidas na
-    semana, ou None se houver menos de duas).
+    semana, ou None se houver menos de duas) e dados_desde (a data do
+    primeiro registro de execucao, SO quando ele e mais novo que a janela de
+    7 dias, ou seja, quando os numeros da semana sao parciais; senao None).
+
+    editais_abertos usa criterios.contar_editais_abertos, a MESMA funcao do
+    painel, pra os dois numeros nao divergirem.
 
     O maior intervalo existe porque a "ultima captura" de um e-mail de
     segunda e sempre a que acabou de rodar, entao sozinha nao mostra se o
@@ -68,9 +80,13 @@ def montar_resumo(conexao, agora):
     desde = agora - timedelta(days=DIAS_DO_RESUMO)
     execucoes = banco.consultar_execucoes_desde(conexao, desde)
 
+    primeira_execucao = banco.consultar_primeira_execucao(conexao)
+    historico_incompleto = primeira_execucao is not None and primeira_execucao > desde
+
     return {
+        "dados_desde": primeira_execucao.date() if historico_incompleto else None,
         "maior_intervalo_em_horas": _maior_intervalo_em_horas(execucoes),
-        "editais_abertos": banco.contar_editais_abertos(conexao, agora),
+        "editais_abertos": criterios.contar_editais_abertos(banco.consultar_historico(conexao), agora),
         "editais_novos_na_semana": banco.contar_editais_vistos_desde(conexao, desde),
         "capturas_na_semana": len(execucoes),
         "capturas_com_falhas_na_semana": sum(1 for e in execucoes if e["resultado"] != "completa"),
@@ -113,24 +129,57 @@ def montar_corpo_html(resumo):
     """Corpo do e-mail em HTML simples (mesma ideia do entrega/resumo.py)."""
     ultima = _texto_da_ultima_execucao(resumo["ultima_execucao"])
     maior_intervalo = resumo["maior_intervalo_em_horas"]
-    texto_intervalo = "sem dados suficientes" if maior_intervalo is None else f"{maior_intervalo:.0f} h"
+    em_atencao = maior_intervalo is not None and maior_intervalo > INTERVALO_DE_ATENCAO_EM_HORAS
+    if maior_intervalo is None:
+        texto_intervalo = "sem dados suficientes"
+    else:
+        texto_intervalo = f"{maior_intervalo:.1f}".replace(".", ",") + " h"
+
+    # Quando o registro de capturas tem menos de 7 dias, os numeros de
+    # execucoes e de intervalo sao parciais: uma nota unica diz desde quando
+    # existem dados.
+    nota_dados_desde = ""
+    if resumo["dados_desde"] is not None:
+        nota_dados_desde = (
+            f'<p style="margin:4px 0 12px 0; font-size:13px; color:#666;">'
+            f'Dados desde {resumo["dados_desde"]:%d/%m}: o registro de capturas começou nessa data, '
+            f'então as execuções e o intervalo abaixo cobrem menos de {DIAS_DO_RESUMO} dias.</p>'
+        )
+
     # Primeiro o que diz se o Radar esta vivo, depois o que ele encontrou.
     linhas = [
-        ("Última captura bem-sucedida", ultima),
-        (f"Execuções nos últimos {DIAS_DO_RESUMO} dias", resumo["capturas_na_semana"]),
-        ("Dessas, com municípios de fora", resumo["capturas_com_falhas_na_semana"]),
-        ("Maior intervalo entre duas capturas na semana", texto_intervalo),
-        ("Editais abertos no banco", resumo["editais_abertos"]),
-        (f"Editais novos nos últimos {DIAS_DO_RESUMO} dias", resumo["editais_novos_na_semana"]),
+        ("Última captura bem-sucedida", ultima, ""),
+        (
+            f"Execuções nos últimos {DIAS_DO_RESUMO} dias",
+            resumo["capturas_na_semana"],
+            "",
+        ),
+        ("Dessas, com municípios de fora", resumo["capturas_com_falhas_na_semana"], ""),
+        (
+            "Maior intervalo entre duas capturas na semana",
+            texto_intervalo,
+            f"normal: cerca de {INTERVALO_NORMAL_EM_HORAS} h; atenção a partir de {INTERVALO_DE_ATENCAO_EM_HORAS} h",
+        ),
+        ("Editais abertos no banco", resumo["editais_abertos"], ""),
+        (f"Editais novos nos últimos {DIAS_DO_RESUMO} dias", resumo["editais_novos_na_semana"], ""),
     ]
-    itens = "".join(
-        f'<p style="margin:4px 0;">{html.escape(str(rotulo))}: <strong>{html.escape(str(valor))}</strong></p>'
-        for rotulo, valor in linhas
-    )
+
+    itens = ""
+    for rotulo, valor, referencia in linhas:
+        destaque = em_atencao and rotulo.startswith("Maior intervalo")
+        cor = f"color:{COR_ATENCAO};" if destaque else ""
+        sufixo_referencia = (
+            f' <span style="font-size:12px; color:#666;">({html.escape(referencia)})</span>' if referencia else ""
+        )
+        itens += (
+            f'<p style="margin:4px 0;{cor}">{html.escape(str(rotulo))}: '
+            f'<strong>{html.escape(str(valor))}</strong>{sufixo_referencia}</p>'
+        )
     return f"""
     <html><body style="font-family:Arial,sans-serif; color:#12233D;">
         <h2 style="margin-bottom:8px;">Radar ativo</h2>
         <p style="margin:4px 0 12px 0;">O Radar NexLicit está rodando. Resumo da semana:</p>
+        {nota_dados_desde}
         {itens}
         <p style="margin:16px 0 0 0; font-size:12px; color:#666;">
             Este aviso sai na primeira captura de segunda-feira, a partir das 05h de Brasília.
