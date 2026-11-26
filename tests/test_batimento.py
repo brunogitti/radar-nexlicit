@@ -9,9 +9,9 @@ Como rodar (com o venv ativado, na pasta do projeto):
     python -m pytest tests/test_batimento.py -v
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
-from captura import banco
+from captura import banco, criterios
 from captura.modelos import Edital
 from entrega import batimento
 
@@ -109,6 +109,7 @@ def test_resumo_de_banco_vazio(tmp_path):
         "capturas_com_falhas_na_semana": 0,
         "ultima_execucao": None,
         "maior_intervalo_em_horas": None,
+        "dados_desde": None,
     }
 
 
@@ -166,6 +167,7 @@ def _resumo_de_teste(ultima_execucao):
         "capturas_com_falhas_na_semana": 1,
         "ultima_execucao": ultima_execucao,
         "maior_intervalo_em_horas": 30.0,
+        "dados_desde": None,
     }
 
 
@@ -189,7 +191,7 @@ def test_corpo_traz_os_numeros_e_a_ultima_captura_completa():
     assert "22/11/2026 13h00" in corpo
     assert "completa, 143 municípios consultados" in corpo
     assert "Execuções nos últimos 7 dias" in corpo
-    assert "Maior intervalo entre duas capturas na semana: <strong>30 h</strong>" in corpo
+    assert "Maior intervalo entre duas capturas na semana: <strong>30,0 h</strong>" in corpo
 
 
 def test_corpo_avisa_quando_a_ultima_captura_teve_falhas():
@@ -250,3 +252,129 @@ def test_maior_intervalo_ignora_capturas_de_antes_da_janela_de_7_dias(tmp_path):
     _registrar(conexao, datetime(2026, 11, 20, 13, 0))  # 6 h
 
     assert batimento.montar_resumo(conexao, SEGUNDA_06H)["maior_intervalo_em_horas"] == 6.0
+
+
+# ---------------------------------------------------------------------------
+# "dados desde dd/mm": menos de 7 dias de historico
+# ---------------------------------------------------------------------------
+
+
+def test_historico_de_menos_de_7_dias_informa_dados_desde(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 25, 7, 0))   # primeiro registro, 4 dias antes da segunda
+    _registrar(conexao, datetime(2026, 11, 26, 7, 0))
+
+    resumo = batimento.montar_resumo(conexao, datetime(2026, 11, 30, 6, 0))
+
+    assert resumo["dados_desde"] == date(2026, 11, 25)
+
+
+def test_historico_de_7_dias_ou_mais_nao_informa_dados_desde(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 16, 6, 0))   # exatamente 7 dias antes de 23/11 06h
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["dados_desde"] is None
+
+
+def test_historico_comecando_logo_depois_do_limite_de_7_dias_e_parcial(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 16, 6, 1))   # 1 minuto depois do inicio da janela
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["dados_desde"] == date(2026, 11, 16)
+
+
+def test_dados_desde_considera_o_primeiro_registro_mesmo_fora_da_janela(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    _registrar(conexao, datetime(2026, 11, 1, 7, 0))    # antigo: historico completo
+    _registrar(conexao, datetime(2026, 11, 22, 7, 0))
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["dados_desde"] is None
+
+
+def test_sem_nenhuma_execucao_nao_informa_dados_desde(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    assert batimento.montar_resumo(conexao, SEGUNDA_06H)["dados_desde"] is None
+
+
+def test_corpo_com_dados_desde_traz_uma_unica_nota_com_a_data():
+    resumo = _resumo_de_teste(None)
+    resumo["dados_desde"] = date(2026, 11, 25)
+
+    corpo = batimento.montar_corpo_html(resumo)
+
+    assert corpo.count("Dados desde 25/11") == 1
+    assert "menos de 7 dias" in corpo
+    # os numeros em si continuam limpos, sem parentese colado
+    assert "<strong>14</strong>" in corpo
+    assert "<strong>30,0 h</strong>" in corpo
+
+
+def test_corpo_sem_dados_desde_nao_menciona_a_data():
+    corpo = batimento.montar_corpo_html(_resumo_de_teste(None))
+
+    assert "Dados desde" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# Frase de referencia e destaque em vermelho do maior intervalo
+# ---------------------------------------------------------------------------
+
+
+def _corpo_com_intervalo(horas):
+    resumo = _resumo_de_teste(None)
+    resumo["maior_intervalo_em_horas"] = horas
+    return batimento.montar_corpo_html(resumo)
+
+
+def test_corpo_traz_a_frase_de_referencia_do_intervalo():
+    corpo = _corpo_com_intervalo(20.0)
+
+    assert "normal: cerca de 20 h; atenção a partir de 24 h" in corpo
+
+
+def test_intervalo_normal_nao_fica_vermelho():
+    assert batimento.COR_ATENCAO not in _corpo_com_intervalo(20.3)
+
+
+def test_intervalo_de_exatamente_24_h_nao_fica_vermelho():
+    assert batimento.COR_ATENCAO not in _corpo_com_intervalo(24.0)
+
+
+def test_intervalo_acima_de_24_h_fica_vermelho():
+    assert batimento.COR_ATENCAO in _corpo_com_intervalo(24.1)
+
+
+def test_so_a_linha_do_intervalo_fica_vermelha():
+    corpo = _corpo_com_intervalo(30.0)
+
+    assert corpo.count(batimento.COR_ATENCAO) == 1
+    linha_vermelha = [p for p in corpo.split("</p>") if batimento.COR_ATENCAO in p][0]
+    assert "Maior intervalo entre duas capturas na semana" in linha_vermelha
+
+
+def test_sem_intervalo_calculavel_nao_fica_vermelho():
+    assert batimento.COR_ATENCAO not in _corpo_com_intervalo(None)
+
+
+# ---------------------------------------------------------------------------
+# Editais abertos: mesmo numero que o painel (mesma funcao, captura/criterios.py)
+# ---------------------------------------------------------------------------
+
+
+def test_editais_abertos_do_email_e_o_mesmo_numero_da_funcao_do_painel(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    futuro = datetime(2026, 12, 20, 9, 0)
+    banco.salvar(conexao, [
+        (_edital_de_teste("ABERTO-1", futuro), "novo", None),
+        (_edital_de_teste("ABERTO-2", futuro), "novo", None),
+        (_edital_de_teste("SUSPENSO", futuro, situacao="Suspensa"), "novo", None),
+        (_edital_de_teste("EXCLUIDO", futuro), "novo", None),
+        (_edital_de_teste("VENCIDO-HOJE", datetime(2026, 11, 23, 5, 0)), "novo", None),
+    ])
+    banco.marcar_excluido(conexao, "EXCLUIDO", datetime(2026, 11, 22, 10, 0))
+
+    do_email = batimento.montar_resumo(conexao, SEGUNDA_06H)["editais_abertos"]
+    do_painel = criterios.contar_editais_abertos(banco.consultar_historico(conexao), SEGUNDA_06H)
+
+    assert do_email == do_painel == 2

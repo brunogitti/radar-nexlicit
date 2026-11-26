@@ -596,3 +596,17 @@ def test_contar_editais_vistos_desde_ignora_excluidos_e_antigos(tmp_path):
 
     assert banco.contar_editais_vistos_desde(conexao, datetime(2000, 1, 1)) == 1
     assert banco.contar_editais_vistos_desde(conexao, datetime(2100, 1, 1)) == 0
+
+
+def test_primeira_execucao_de_tabela_vazia_e_none(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+
+    assert banco.consultar_primeira_execucao(conexao) is None
+
+
+def test_primeira_execucao_devolve_a_mais_antiga(tmp_path):
+    conexao = _banco_de_teste(tmp_path)
+    for dia in (22, 10, 20):
+        banco.registrar_execucao(conexao, datetime(2026, 11, dia, 7, 0), "completa", 143, 0, 330, 0)
+
+    assert banco.consultar_primeira_execucao(conexao) == datetime(2026, 11, 10, 7, 0)
