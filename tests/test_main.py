@@ -414,3 +414,59 @@ def test_batimento_traz_a_captura_que_acabou_de_ser_registrada(tmp_path, monkeyp
 
     assert "23/11/2026 06h00" in enviados[0]["corpo"]
     assert "completa, 143 municípios consultados" in enviados[0]["corpo"]
+
+
+# ---------------------------------------------------------------------------
+# carregar_municipios_ativos: filtro por UF (captura de teste so de GO)
+# ---------------------------------------------------------------------------
+
+
+def _csv_de_municipios_de_teste(tmp_path):
+    caminho = tmp_path / "municipios.csv"
+    caminho.write_text(
+        "municipio,uf,km,codigo_ibge,ativo\n"
+        "Votuporanga,SP,0,3557105,sim\n"
+        "Goiânia,GO,,5208707,sim\n"
+        "Anápolis,GO,,5201108,sim\n"
+        "Cidade Desligada,GO,,5200000,nao\n",
+        encoding="utf-8",
+    )
+    return str(caminho)
+
+
+def test_sem_filtro_devolve_todos_os_ativos(tmp_path):
+    municipios = main.carregar_municipios_ativos(_csv_de_municipios_de_teste(tmp_path))
+
+    assert [m["municipio"] for m in municipios] == ["Votuporanga", "Goiânia", "Anápolis"]
+
+
+def test_filtro_uf_devolve_so_os_ativos_daquela_uf(tmp_path):
+    municipios = main.carregar_municipios_ativos(_csv_de_municipios_de_teste(tmp_path), filtro_uf="GO")
+
+    assert [m["municipio"] for m in municipios] == ["Goiânia", "Anápolis"]
+
+
+def test_filtro_uf_ignora_maiuscula_e_espaco(tmp_path):
+    municipios = main.carregar_municipios_ativos(_csv_de_municipios_de_teste(tmp_path), filtro_uf=" go ")
+
+    assert len(municipios) == 2
+
+
+def test_filtro_uf_sem_nenhum_municipio_devolve_lista_vazia(tmp_path):
+    assert main.carregar_municipios_ativos(_csv_de_municipios_de_teste(tmp_path), filtro_uf="PR") == []
+
+
+def test_filtro_uf_junto_com_filtro_de_municipio(tmp_path):
+    municipios = main.carregar_municipios_ativos(
+        _csv_de_municipios_de_teste(tmp_path), filtro_municipio="anapolis", filtro_uf="GO"
+    )
+
+    assert [m["codigo_ibge"] for m in municipios] == ["5201108"]
+
+
+def test_lista_real_tem_os_246_municipios_de_go_com_codigo_52():
+    municipios_go = main.carregar_municipios_ativos(filtro_uf="GO")
+
+    assert len(municipios_go) == 246
+    assert all(m["codigo_ibge"].startswith("52") and len(m["codigo_ibge"]) == 7 for m in municipios_go)
+    assert len({m["codigo_ibge"] for m in main.carregar_municipios_ativos()}) == 389

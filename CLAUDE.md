@@ -1,6 +1,6 @@
 # Radar NexLicit
 
-Aplicação Python que captura editais com proposta em aberto no PNCP (Portal Nacional de Contratações Públicas) para 143 municípios de SP/MG/MS, filtra por palavra-chave configurável, tagueia por segmento de produto, deduplica via SQLite local, entrega por e-mail, automatiza via GitHub Actions, e expõe um painel público em Streamlit. Serve dois propósitos: uso operacional real pela NexLicit (consultoria em licitações) e peça de portfólio pública no GitHub.
+Aplicação Python que captura editais com proposta em aberto no PNCP (Portal Nacional de Contratações Públicas) para 389 municípios de SP/MG/MS/GO (os 143 originais mais os 246 de Goiás), filtra por palavra-chave configurável, tagueia por segmento de produto, deduplica via SQLite local, entrega por e-mail, automatiza via GitHub Actions, e expõe um painel público em Streamlit. Serve dois propósitos: uso operacional real pela NexLicit (consultoria em licitações) e peça de portfólio pública no GitHub.
 
 Bruno (dono do projeto) é iniciante em programação e fundador da NexLicit. Prefere entender cada mudança, não só recebê-la pronta.
 

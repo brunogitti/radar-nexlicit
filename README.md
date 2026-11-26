@@ -5,7 +5,7 @@
 [![Licença MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://radarnexlicit.streamlit.app)
 
-Captura editais com proposta em aberto no Portal Nacional de Contratações Públicas (PNCP) para uma lista fixa de 143 municípios de SP, MG e MS, filtra por palavra-chave configurável, etiqueta cada edital com o segmento de produto correspondente (Limpeza, EPI, Informática, Tinta e Pintura, entre outros), deduplica contra execuções anteriores e entrega por e-mail. Roda sozinho duas vezes ao dia via GitHub Actions e alimenta um [painel público em Streamlit](https://radarnexlicit.streamlit.app).
+Captura editais com proposta em aberto no Portal Nacional de Contratações Públicas (PNCP) para uma lista fixa de 389 municípios de SP, MG, MS e GO, filtra por palavra-chave configurável, etiqueta cada edital com o segmento de produto correspondente (Limpeza, EPI, Informática, Tinta e Pintura, entre outros), deduplica contra execuções anteriores e entrega por e-mail. Roda sozinho duas vezes ao dia via GitHub Actions e alimenta um [painel público em Streamlit](https://radarnexlicit.streamlit.app).
 
 Projeto com dois propósitos: uso operacional real pela [NexLicit](https://github.com/brunogitti) (consultoria em licitações) e peça de portfólio pública.
 
@@ -19,7 +19,7 @@ O Radar automatiza essa vigilância: busca, filtra pelos segmentos de interesse,
 
 ```mermaid
 flowchart TD
-    A["API do PNCP\n/v1/contratacoes/proposta"] -->|"pncp_client.py\n143 municipios, com retry"| B["Editais com proposta em aberto"]
+    A["API do PNCP\n/v1/contratacoes/proposta"] -->|"pncp_client.py\n389 municipios, com retry"| B["Editais com proposta em aberto"]
     B --> C{"filtro.py\n+ config/keywords.yaml"}
     C -->|"bateu 1+ segmento"| D[("dados/radar.db\nSQLite")]
     C -->|"nao bateu nenhum termo"| E["Descartado"]
@@ -79,12 +79,12 @@ python -m pytest tests/ -v
 ## Configuração
 
 - **`config/keywords.yaml`**: 19 segmentos de produto (Limpeza, Expediente, Copa e cozinha, Gêneros alimentícios, Descartáveis, Informática, Eletrônicos, Elétrica, Hidráulica, Construção, Tinta e Pintura, Gráfico, Uniformes e vestuário, EPI, Móveis, Automotivo, Pilha e Bateria, Piscina, Decoração), mais uma lista de exclusões globais.
-- **`config/municipios.csv`**: 143 municípios monitorados (130 SP, 10 MG, 3 MS), cada um com código IBGE e uma coluna `ativo` pra ligar/desligar um município sem editar código.
+- **`config/municipios.csv`**: 389 municípios monitorados (130 SP, 10 MG, 3 MS e os 246 de GO), cada um com código IBGE e uma coluna `ativo` pra ligar/desligar um município sem editar código.
 - **`.env`**: credenciais de e-mail (Gmail) usadas por `entrega/email_sender.py`. Ver `.env.example` pro formato esperado.
 
 ## Automação (GitHub Actions)
 
-`.github/workflows/captura-diaria.yml` é disparado todo dia às 7h07 e às 13h07 (horário de Brasília) por um agendador externo gratuito, com o `agendador.yml` de 2 em 2 horas como rede de segurança (detalhes em `docs/operacao-agendamento.md`), ou manualmente via `gh workflow run captura-diaria.yml`. Cada execução: restaura o banco salvo na branch `data`, roda a suíte de testes automatizados (só segue adiante se passar), captura e filtra os editais dos 143 municípios, envia o e-mail com o que é novo, e publica o banco atualizado de volta na branch `data`.
+`.github/workflows/captura-diaria.yml` é disparado todo dia às 7h07 e às 13h07 (horário de Brasília) por um agendador externo gratuito, com o `agendador.yml` de 2 em 2 horas como rede de segurança (detalhes em `docs/operacao-agendamento.md`), ou manualmente via `gh workflow run captura-diaria.yml`. Cada execução: restaura o banco salvo na branch `data`, roda a suíte de testes automatizados (só segue adiante se passar), captura e filtra os editais dos 389 municípios, envia o e-mail com o que é novo, e publica o banco atualizado de volta na branch `data`.
 
 ## Stack
 
